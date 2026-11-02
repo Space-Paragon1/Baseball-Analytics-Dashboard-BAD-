@@ -71,10 +71,14 @@ export default function Navbar({ onMenuClick }: { onMenuClick?: () => void }) {
 
         {user ? (
           <div className="flex items-center gap-1.5">
-            <span className="hidden sm:flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300 font-medium">
+            <Link
+              href="/account"
+              className="hidden sm:flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300 font-medium rounded-lg px-2 py-1 hover:bg-gray-100 dark:hover:bg-slate-700"
+              title="Account settings"
+            >
               {user.is_admin ? <ShieldCheck className="w-3.5 h-3.5 text-amber-500" /> : <User className="w-3.5 h-3.5" />}
               {user.username}
-            </span>
+            </Link>
             <button
               onClick={() => {
                 logout();

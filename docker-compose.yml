@@ -12,6 +12,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/db/baseball.db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
+      LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+      # Read by uvicorn: which proxy IPs may set X-Forwarded-For.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
     volumes:
       - baseball_db:/app/db
     restart: unless-stopped

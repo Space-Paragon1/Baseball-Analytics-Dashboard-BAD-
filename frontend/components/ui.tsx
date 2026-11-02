@@ -65,7 +65,7 @@ export function AuthGate({ admin = false, action, children }: { admin?: boolean;
       </p>
       <p className="text-sm muted mt-1">
         {user
-          ? "The first account created on this dashboard is the admin."
+          ? "Ask an admin to give your account admin access."
           : "Viewing stats is open to everyone; changing data needs an account."}
       </p>
       {!user && (

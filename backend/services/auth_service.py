@@ -3,8 +3,11 @@
 Access levels:
   - anyone: read-only endpoints
   - signed-in user (`require_user`): add/edit records, Game Mode
-  - admin (`require_admin`): delete records, bulk upload, MLB import
+  - admin (`require_admin`): delete records, bulk upload, MLB import, manage users
 The first account ever registered becomes the admin.
+
+Tokens carry the user's `token_version`. Bumping it (password change or reset,
+account disabled) makes every token issued before that stop working.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -21,11 +24,12 @@ from backend.database import get_db
 from backend.models import User
 
 ALGORITHM = "HS256"
+BCRYPT_ROUNDS = 12  # the test suite lowers this to keep it fast
 _bearer = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(BCRYPT_ROUNDS)).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -42,6 +46,7 @@ def create_access_token(user: User, expires_delta: Optional[timedelta] = None) -
     now = datetime.now(UTC)
     payload = {
         "sub": str(user.id),
+        "ver": user.token_version or 0,
         "iat": now,
         "exp": now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)),
     }
@@ -68,8 +73,10 @@ def get_optional_user(
     except (jwt.PyJWTError, ValueError, KeyError):
         raise _unauthorized("Your session has expired. Please sign in again.") from None
     user = db.get(User, user_id)
-    if user is None:
+    if user is None or payload.get("ver", 0) != (user.token_version or 0):
         raise _unauthorized("Your session has expired. Please sign in again.")
+    if not user.is_active:
+        raise _unauthorized("This account has been disabled.")
     return user
 
 

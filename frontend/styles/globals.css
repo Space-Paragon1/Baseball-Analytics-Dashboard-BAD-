@@ -95,6 +95,14 @@
     @apply badge bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300;
   }
 
+  .badge-green {
+    @apply badge bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300;
+  }
+
+  .badge-red {
+    @apply badge bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-300;
+  }
+
   .btn {
     @apply inline-flex items-center justify-center gap-2 font-semibold px-4 py-2 rounded-lg text-sm transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
   }

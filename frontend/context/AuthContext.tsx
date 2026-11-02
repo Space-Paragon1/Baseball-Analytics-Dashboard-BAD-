@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { AUTH_EXPIRED_EVENT, TOKEN_KEY, authLogin, authMe, authRegister } from "../utils/api";
+import { AUTH_EXPIRED_EVENT, TOKEN_KEY, authChangePassword, authLogin, authMe, authRegister } from "../utils/api";
 import type { AuthResponse, AuthUser } from "../types";
 
 interface AuthContextType {
@@ -10,6 +10,8 @@ interface AuthContextType {
   expired: boolean;
   login: (username: string, password: string) => Promise<AuthUser>;
   register: (username: string, email: string, password: string) => Promise<AuthUser>;
+  /** Keeps this session signed in; every other session is signed out. */
+  changePassword: (current: string, next: string) => Promise<AuthUser>;
   logout: () => void;
 }
 
@@ -21,6 +23,9 @@ const AuthContext = createContext<AuthContextType>({
     throw new Error("AuthProvider missing");
   },
   register: async () => {
+    throw new Error("AuthProvider missing");
+  },
+  changePassword: async () => {
     throw new Error("AuthProvider missing");
   },
   logout: () => {},
@@ -62,14 +67,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (u: string, e: string, p: string) => accept(await authRegister(u, e, p)),
     [accept]
   );
+  const changePassword = useCallback(
+    async (current: string, next: string) => accept(await authChangePassword(current, next)),
+    [accept]
+  );
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, ready, expired, login, register, logout }),
-    [user, ready, expired, login, register, logout]
+    () => ({ user, ready, expired, login, register, changePassword, logout }),
+    [user, ready, expired, login, register, changePassword, logout]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
