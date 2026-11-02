@@ -1,0 +1,17 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["backend/tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning:reportlab.*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008", "UP007", "UP006", "UP035", "UP045"]  # B008: FastAPI Depends() defaults
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend"]

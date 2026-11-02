@@ -1,122 +1,71 @@
+from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-import pandas as pd
-from typing import List, Dict, Any, Optional
-from datetime import date
 
 from backend.database import get_db
-from backend.models.game_record import GameRecord
-from backend.services.analytics import AnalyticsService
+from backend.routes.common import DateRange, date_range
+from backend.services import analytics
+from backend.services.records import load_df
 
-router = APIRouter()
-analytics = AnalyticsService()
-
-
-def records_to_df(
-    db: Session,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-) -> pd.DataFrame:
-    query = db.query(GameRecord)
-
-    if start_date:
-        try:
-            sd = date.fromisoformat(start_date)
-            query = query.filter(GameRecord.game_date >= sd)
-        except ValueError:
-            pass
-
-    if end_date:
-        try:
-            ed = date.fromisoformat(end_date)
-            query = query.filter(GameRecord.game_date <= ed)
-        except ValueError:
-            pass
-
-    records = query.all()
-    if not records:
-        return pd.DataFrame()
-    data = [
-        {
-            "player_id": r.player_id,
-            "player_name": r.player_name,
-            "team": r.team,
-            "position": r.position,
-            "game_date": r.game_date,
-            "at_bats": r.at_bats,
-            "hits": r.hits,
-            "doubles": r.doubles,
-            "triples": r.triples,
-            "home_runs": r.home_runs,
-            "runs": r.runs,
-            "rbi": r.rbi,
-            "strikeouts": r.strikeouts,
-            "walks": r.walks,
-            "hit_by_pitch": r.hit_by_pitch,
-            "innings_pitched": r.innings_pitched,
-            "earned_runs": r.earned_runs,
-            "hits_allowed": r.hits_allowed,
-            "walks_allowed": r.walks_allowed,
-            "strikeouts_pitched": r.strikeouts_pitched,
-            "game_id": r.game_id,
-            "opponent": r.opponent,
-        }
-        for r in records
-    ]
-    return pd.DataFrame(data)
+router = APIRouter(prefix="/stats", tags=["Stats"])
 
 
-@router.get("/stats/batting")
-def get_batting_leaderboard(
-    start_date: Optional[str] = Query(default=None),
-    end_date: Optional[str] = Query(default=None),
+def _filter(df, team: Optional[str], qualified_only: bool):
+    if df.empty:
+        return df
+    if team:
+        df = df[df["team"].str.lower() == team.lower()]
+    if qualified_only:
+        df = df[df["qualified"]]
+    return df
+
+
+@router.get("/batting")
+def batting_leaderboard(
+    dates: DateRange = Depends(date_range),
+    team: Optional[str] = None,
+    qualified_only: bool = False,
     db: Session = Depends(get_db),
 ) -> List[Dict[str, Any]]:
-    df = records_to_df(db, start_date, end_date)
-    if df.empty:
-        return []
-    batting_df = analytics.calculate_batting_stats(df)
-    return batting_df.sort_values("batting_avg", ascending=False).to_dict(orient="records")
+    df = load_df(db, dates.start_date, dates.end_date)
+    return analytics.to_records(_filter(analytics.calculate_batting_stats(df), team, qualified_only))
 
 
-@router.get("/stats/pitching")
-def get_pitching_leaderboard(
-    start_date: Optional[str] = Query(default=None),
-    end_date: Optional[str] = Query(default=None),
+@router.get("/pitching")
+def pitching_leaderboard(
+    dates: DateRange = Depends(date_range),
+    team: Optional[str] = None,
+    qualified_only: bool = False,
     db: Session = Depends(get_db),
 ) -> List[Dict[str, Any]]:
-    df = records_to_df(db, start_date, end_date)
+    df = load_df(db, dates.start_date, dates.end_date)
+    return analytics.to_records(_filter(analytics.calculate_pitching_stats(df), team, qualified_only))
+
+
+@router.get("/insights")
+def insights(dates: DateRange = Depends(date_range), db: Session = Depends(get_db)) -> List[str]:
+    df = load_df(db, dates.start_date, dates.end_date)
     if df.empty:
         return []
-    pitching_df = analytics.calculate_pitching_stats(df)
-    if pitching_df.empty:
-        return []
-    return pitching_df.sort_values("era", ascending=True).to_dict(orient="records")
+    return analytics.generate_insights(
+        analytics.calculate_batting_stats(df),
+        analytics.calculate_pitching_stats(df),
+        analytics.calculate_team_stats(df),
+    )
 
 
-@router.get("/stats/insights")
-def get_insights(db: Session = Depends(get_db)) -> List[str]:
-    df = records_to_df(db)
-    if df.empty:
-        return []
-    batting_df = analytics.calculate_batting_stats(df)
-    pitching_df = analytics.calculate_pitching_stats(df)
-    team_df = analytics.calculate_team_stats(df)
-    return analytics.generate_insights(batting_df, pitching_df, team_df)
-
-
-@router.get("/stats/dashboard")
-def get_dashboard(
-    start_date: Optional[str] = Query(default=None),
-    end_date: Optional[str] = Query(default=None),
+@router.get("/dashboard")
+def dashboard(
+    dates: DateRange = Depends(date_range),
+    trend_points: int = Query(default=15, ge=1, le=200),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    df = records_to_df(db, start_date, end_date)
+    df = load_df(db, dates.start_date, dates.end_date)
+    summary = analytics.league_summary(df)
     if df.empty:
         return {
-            "total_games": 0,
-            "total_runs": 0,
-            "league_batting_avg": 0.0,
+            **summary,
             "top_performer": None,
             "top_pitcher": None,
             "teams": [],
@@ -124,68 +73,47 @@ def get_dashboard(
             "top5_batters": [],
         }
 
-    total_games = df["game_id"].nunique()
-    total_runs = int(df["runs"].sum())
+    batting = analytics.calculate_batting_stats(df)
+    pitching = analytics.calculate_pitching_stats(df)
+    teams = analytics.calculate_team_stats(df)
 
-    total_hits = int(df["hits"].sum())
-    total_ab = int(df["at_bats"].sum())
-    league_batting_avg = round(total_hits / total_ab, 3) if total_ab > 0 else 0.0
+    top_performer = top_pitcher = None
+    top5 = []
+    if not batting.empty:
+        qb = analytics.qualified_or_all(batting)
+        top_performer = analytics.to_records(
+            qb.sort_values("batting_avg", ascending=False).head(1)[
+                ["player_id", "player_name", "team", "batting_avg", "ops", "home_runs", "rbi"]
+            ]
+        )[0]
+        top5 = analytics.to_records(
+            qb.sort_values("ops", ascending=False).head(5)[
+                ["player_id", "player_name", "team", "batting_avg", "obp", "slg", "ops", "home_runs", "rbi", "hits"]
+            ]
+        )
+    if not pitching.empty:
+        qp = analytics.qualified_or_all(pitching).dropna(subset=["era"])
+        if not qp.empty:
+            top_pitcher = analytics.to_records(
+                qp.sort_values("era").head(1)[
+                    ["player_id", "player_name", "team", "era", "fip", "whip", "strikeouts_pitched", "innings_pitched"]
+                ]
+            )[0]
 
-    batting_df = analytics.calculate_batting_stats(df)
-    pitching_df = analytics.calculate_pitching_stats(df)
-    team_df = analytics.calculate_team_stats(df)
-
-    top_performer = None
-    if not batting_df.empty:
-        top = batting_df.sort_values("batting_avg", ascending=False).iloc[0]
-        top_performer = {
-            "player_name": top["player_name"],
-            "team": top["team"],
-            "batting_avg": top["batting_avg"],
-            "home_runs": int(top["home_runs"]),
-            "rbi": int(top["rbi"]),
-        }
-
-    top_pitcher = None
-    if not pitching_df.empty:
-        tp = pitching_df.sort_values("era", ascending=True).iloc[0]
-        top_pitcher = {
-            "player_name": tp["player_name"],
-            "team": tp["team"],
-            "era": tp["era"],
-            "strikeouts_pitched": int(tp["strikeouts_pitched"]),
-            "whip": tp["whip"],
-        }
-
-    teams_list = team_df.to_dict(orient="records") if not team_df.empty else []
-
-    # Recent trend: runs per game date (all teams combined)
-    runs_by_date = df.groupby("game_date").agg(
-        total_runs=("runs", "sum"),
-        total_hits=("hits", "sum"),
-    ).reset_index().sort_values("game_date").tail(10)
-
-    recent_trend = []
-    for _, row in runs_by_date.iterrows():
-        recent_trend.append({
-            "game_date": str(row["game_date"]),
-            "total_runs": int(row["total_runs"]),
-            "total_hits": int(row["total_hits"]),
-        })
-
-    # Top 5 batters for bar chart
-    top5_batters = []
-    if not batting_df.empty:
-        top5 = batting_df.sort_values("batting_avg", ascending=False).head(5)
-        top5_batters = top5[["player_name", "team", "batting_avg", "home_runs", "rbi", "hits"]].to_dict(orient="records")
+    by_date = (
+        df.groupby("game_date")
+        .agg(games=("game_id", "nunique"), total_runs=("runs", "sum"), total_hits=("hits", "sum"))
+        .reset_index()
+        .sort_values("game_date")
+        .tail(trend_points)
+    )
+    by_date["runs_per_game"] = (by_date["total_runs"] / by_date["games"]).round(2)
 
     return {
-        "total_games": total_games,
-        "total_runs": total_runs,
-        "league_batting_avg": league_batting_avg,
+        **summary,
         "top_performer": top_performer,
         "top_pitcher": top_pitcher,
-        "teams": teams_list,
-        "recent_trend": recent_trend,
-        "top5_batters": top5_batters,
+        "teams": analytics.to_records(teams),
+        "recent_trend": analytics.to_records(by_date),
+        "top5_batters": top5,
     }

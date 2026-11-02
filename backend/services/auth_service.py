@@ -1,97 +1,85 @@
-import os
-import hashlib
-from datetime import datetime, timedelta
+"""Password hashing, JWT tokens, and the auth dependencies used by routes.
+
+Access levels:
+  - anyone: read-only endpoints
+  - signed-in user (`require_user`): add/edit records, Game Mode
+  - admin (`require_admin`): delete records, bulk upload, MLB import
+The first account ever registered becomes the admin.
+"""
+
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
-from fastapi import HTTPException, status, Depends
-from fastapi.security import OAuth2PasswordBearer
+import bcrypt
+import jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from backend.config import ACCESS_TOKEN_EXPIRE_MINUTES, SECRET_KEY
 from backend.database import get_db
+from backend.models import User
 
-SECRET_KEY = os.getenv("SECRET_KEY", "baseball-analytics-dashboard-secret-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-
-def _hash_sha256(password: str) -> str:
-    """SHA-256 fallback hash (not bcrypt but secure enough for development)."""
-    salt = os.urandom(16).hex()
-    h = hashlib.sha256((salt + password).encode()).hexdigest()
-    return f"sha256${salt}${h}"
-
-
-def _verify_sha256(plain: str, hashed: str) -> bool:
-    try:
-        _, salt, h = hashed.split("$", 2)
-        return hashlib.sha256((salt + plain).encode()).hexdigest() == h
-    except Exception:
-        return False
+_bearer = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    try:
-        import bcrypt
-        # Use bcrypt directly - truncate password to 72 bytes to avoid bcrypt limit
-        pwd_bytes = password.encode("utf-8")[:72]
-        salt = bcrypt.gensalt()
-        return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
-    except Exception:
-        return _hash_sha256(password)
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    if hashed_password.startswith("sha256$"):
-        return _verify_sha256(plain_password, hashed_password)
+    pw = plain_password.encode("utf-8")
+    if len(pw) > 72:  # longer passwords can't be registered
+        return False
     try:
-        import bcrypt
-        pwd_bytes = plain_password.encode("utf-8")[:72]
-        return bcrypt.checkpw(pwd_bytes, hashed_password.encode("utf-8"))
-    except Exception:
+        return bcrypt.checkpw(pw, hashed_password.encode("utf-8"))
+    except ValueError:  # malformed hash
         return False
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    try:
-        from jose import jwt
-        to_encode = data.copy()
-        expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-        to_encode.update({"exp": expire})
-        return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    except ImportError:
-        import base64
-        import json
-        payload = {
-            **data,
-            "exp": str(datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)))
-        }
-        return base64.b64encode(json.dumps(payload).encode()).decode()
+def create_access_token(user: User, expires_delta: Optional[timedelta] = None) -> str:
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user.id),
+        "iat": now,
+        "exp": now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    from backend.models.user import User
-
-    credentials_exception = HTTPException(
+def _unauthorized(detail: str = "Please sign in to do that.") -> HTTPException:
+    return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail=detail,
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    try:
-        from jose import jwt, JWTError
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except Exception:
-        raise credentials_exception
 
-    user = db.query(User).filter(User.username == username).first()
+def get_optional_user(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    if creds is None:
+        return None
+    try:
+        payload = jwt.decode(creds.credentials, SECRET_KEY, algorithms=[ALGORITHM], options={"require": ["exp", "sub"]})
+        user_id = int(payload["sub"])
+    except (jwt.PyJWTError, ValueError, KeyError):
+        raise _unauthorized("Your session has expired. Please sign in again.") from None
+    user = db.get(User, user_id)
     if user is None:
-        raise credentials_exception
+        raise _unauthorized("Your session has expired. Please sign in again.")
+    return user
+
+
+def require_user(user: Optional[User] = Depends(get_optional_user)) -> User:
+    if user is None:
+        raise _unauthorized()
+    return user
+
+
+def require_admin(user: User = Depends(require_user)) -> User:
+    if not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an admin can do that.")
     return user
