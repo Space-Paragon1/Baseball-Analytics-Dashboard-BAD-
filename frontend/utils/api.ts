@@ -11,8 +11,11 @@ import type {
   GameSessionSummary,
   GameState,
   ImportResult,
+  ManagedUser,
   Meta,
   MlbTeam,
+  NewUserInput,
+  NewUserResult,
   PitchingStats,
   PlayResult,
   PlayerDetail,
@@ -42,7 +45,13 @@ api.interceptors.response.use(
   (res) => res,
   (error: AxiosError) => {
     // A stored token that the server rejects has expired: sign out everywhere.
-    if (error.response?.status === 401 && typeof window !== "undefined" && window.localStorage.getItem(TOKEN_KEY)) {
+    // (A failed sign-in also returns 401, but says nothing about the stored token.)
+    if (
+      error.response?.status === 401 &&
+      error.config?.url !== "/auth/login" &&
+      typeof window !== "undefined" &&
+      window.localStorage.getItem(TOKEN_KEY)
+    ) {
       window.localStorage.removeItem(TOKEN_KEY);
       window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
     }
@@ -190,5 +199,20 @@ export const authLogin = async (username: string, password: string) =>
 export const authRegister = async (username: string, email: string, password: string) =>
   (await api.post<AuthResponse>("/auth/register", { username, email, password })).data;
 export const authMe = () => get<AuthUser>("/auth/me");
+/** Returns a fresh token; every other session is signed out. */
+export const authChangePassword = async (current_password: string, new_password: string) =>
+  (await api.post<AuthResponse>("/auth/change-password", { current_password, new_password })).data;
+
+// ---------------------------------------------------------------- users (admin)
+
+export const fetchUsers = () => get<ManagedUser[]>("/users");
+export const createUser = async (body: NewUserInput) => (await api.post<NewUserResult>("/users", body)).data;
+export const updateUser = async (id: number, changes: { is_admin?: boolean; is_active?: boolean }) =>
+  (await api.patch<ManagedUser>(`/users/${id}`, changes)).data;
+export const resetUserPassword = async (id: number) =>
+  (await api.post<{ temporary_password: string }>(`/users/${id}/reset-password`)).data;
+export const deleteUser = async (id: number) => {
+  await api.delete(`/users/${id}`);
+};
 
 export default api;

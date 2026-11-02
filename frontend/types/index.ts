@@ -293,3 +293,24 @@ export interface AuthResponse {
   token_type: string;
   user: AuthUser;
 }
+
+/** A user as the admin Users page sees them. */
+export interface ManagedUser extends AuthUser {
+  is_active: boolean;
+  created_at: string | null;
+  last_login_at: string | null;
+}
+
+export interface NewUserInput {
+  username: string;
+  email: string;
+  /** Leave empty to have the server generate a temporary password. */
+  password?: string;
+  is_admin: boolean;
+}
+
+export interface NewUserResult {
+  user: ManagedUser;
+  /** Set only when the server generated the password. Shown once. */
+  temporary_password: string | null;
+}

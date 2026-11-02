@@ -1,6 +1,7 @@
 /** Display helpers for baseball numbers. `null`/`undefined` render as an em dash. */
 
 const DASH = "—";
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Batting-average style: 0.3 -> ".300", 1 -> "1.000". Also used for OBP/SLG/OPS/wOBA. */
 export function formatAvg(val: number | null | undefined): string {
@@ -42,8 +43,22 @@ export function formatDate(iso: string | null | undefined, withYear = true): str
   if (!iso) return DASH;
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
   if (!y || !m || !d) return iso;
-  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1];
+  const month = MONTHS[m - 1];
   return withYear ? `${month} ${d}, ${y}` : `${month} ${d}`;
+}
+
+/** A timestamp, relative when recent: "just now", "5 min ago", "yesterday", then "Mar 15, 2025" (local time). */
+export function formatWhen(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return DASH;
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return iso;
+  const seconds = Math.max(0, (now.getTime() - then.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
+  const days = Math.floor(seconds / 86400);
+  if (days < 7) return days === 1 ? "yesterday" : `${days} days ago`;
+  return `${MONTHS[then.getMonth()]} ${then.getDate()}, ${then.getFullYear()}`;
 }
 
 /** Short label for charts: "Marcus Rivera" -> "Rivera". */

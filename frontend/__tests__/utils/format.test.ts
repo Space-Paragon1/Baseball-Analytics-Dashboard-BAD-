@@ -5,6 +5,7 @@ import {
   formatPct,
   formatRate,
   formatSigned,
+  formatWhen,
   lastName,
   ordinal,
   outsToIP,
@@ -80,5 +81,26 @@ describe("text helpers", () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22].map(ordinal)).toEqual([
       "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd",
     ]);
+  });
+});
+
+describe("formatWhen", () => {
+  const now = new Date("2026-06-15T12:00:00Z");
+  const ago = (seconds: number) => new Date(now.getTime() - seconds * 1000).toISOString();
+
+  it.each([
+    [ago(20), "just now"],
+    [ago(5 * 60), "5 min ago"],
+    [ago(3 * 3600), "3 hr ago"],
+    [ago(30 * 3600), "yesterday"],
+    [ago(3 * 86400), "3 days ago"],
+  ])("%s -> %s", (iso, expected) => {
+    expect(formatWhen(iso, now)).toBe(expected);
+  });
+
+  it("shows a date for older timestamps and a dash for none", () => {
+    expect(formatWhen("2025-03-15T12:00:00Z", now)).toMatch(/^Mar 1[45], 2025$/); // local time zone
+    expect(formatWhen(null, now)).toBe("—");
+    expect(formatWhen("not a date", now)).toBe("not a date");
   });
 });

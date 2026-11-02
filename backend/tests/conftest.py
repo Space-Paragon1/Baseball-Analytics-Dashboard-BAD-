@@ -1,19 +1,36 @@
-"""Test setup: every test gets a fresh in-memory database, so the suite never
-touches a real baseball.db."""
+"""Test setup: every test gets a fresh database, so the suite never touches a
+real baseball.db.
+
+The default is an in-memory SQLite database. Set TEST_DATABASE_URL to run the
+suite against another database, e.g. a throwaway PostgreSQL one (CI does this).
+Every table in it is dropped and recreated for each test.
+"""
 
 import os
 
 # Must be set before any backend module is imported.
-os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or "sqlite://"
 os.environ["SEED_SAMPLE_DATA"] = "false"
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-the-test-suite-only")
+
+from backend.services import auth_service  # noqa: E402
+
+auth_service.BCRYPT_ROUNDS = 4  # fast hashing; set before the app makes its dummy hash
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.database import Base, SessionLocal, engine  # noqa: E402
 from backend.main import app  # noqa: E402
+from backend.services.rate_limit import login_limiter  # noqa: E402
 from backend.services.records import seed_sample_data  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _fresh_login_limits():
+    login_limiter.clear()
+    yield
+    login_limiter.clear()
 
 
 @pytest.fixture()

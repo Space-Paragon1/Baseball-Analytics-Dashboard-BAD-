@@ -2,7 +2,7 @@
 box-score line, so CSV upload, manual entry and editing all behave the same."""
 
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -157,17 +157,24 @@ class ImportResult(BaseModel):
     warnings: List[str] = []
 
 
-# ---------------------------------------------------------------- auth
+# ---------------------------------------------------------------- auth & users
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 
 
-class RegisterBody(BaseModel):
+def check_password(v: str) -> str:
+    if len(v) < 8:
+        raise ValueError("Password must be at least 8 characters.")
+    if len(v.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 bytes.")
+    return v
+
+
+class AccountFields(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     username: str
     email: EmailStr
-    password: str
 
     @field_validator("username")
     @classmethod
@@ -176,19 +183,29 @@ class RegisterBody(BaseModel):
             raise ValueError("Username must be 3-32 characters: letters, numbers, dots, dashes or underscores.")
         return v
 
-    @field_validator("password")
-    @classmethod
-    def _password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters.")
-        if len(v.encode("utf-8")) > 72:
-            raise ValueError("Password must be at most 72 bytes.")
-        return v
+
+class RegisterBody(AccountFields):
+    password: str
+
+    _password = field_validator("password")(check_password)
 
 
 class LoginBody(BaseModel):
     username: str
     password: str
+
+
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str
+
+    _new_password = field_validator("new_password")(check_password)
+
+    @model_validator(mode="after")
+    def _different(self) -> "ChangePasswordBody":
+        if self.new_password == self.current_password:
+            raise ValueError("The new password must be different from the current one.")
+        return self
 
 
 class UserOut(BaseModel):
@@ -202,3 +219,36 @@ class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class UserCreateBody(AccountFields):
+    """An account made by an admin. Leave out the password to generate a temporary one."""
+
+    password: Optional[str] = None
+    is_admin: bool = False
+
+    @field_validator("password")
+    @classmethod
+    def _password(cls, v: Optional[str]) -> Optional[str]:
+        return check_password(v) if v else None
+
+
+class UserUpdateBody(BaseModel):
+    is_admin: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+class ManagedUserOut(UserOut):
+    is_active: bool
+    created_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
+
+
+class NewUserOut(BaseModel):
+    user: ManagedUserOut
+    # Only set when the server generated the password. It is shown once.
+    temporary_password: Optional[str] = None
+
+
+class PasswordResetOut(BaseModel):
+    temporary_password: str
