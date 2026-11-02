@@ -1,18 +1,20 @@
 import {
-  LineChart as RechartsLineChart,
+  CartesianGrid,
+  Legend,
   Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
 } from "recharts";
+import { useChartTheme } from "./chartTheme";
 
 interface LineConfig {
   key: string;
   color: string;
   name: string;
+  dashed?: boolean;
 }
 
 interface LineChartProps {
@@ -21,49 +23,31 @@ interface LineChartProps {
   lines: LineConfig[];
   title?: string;
   height?: number;
+  valueFormatter?: (v: number) => string;
+  domain?: [number | "auto" | "dataMin" | "dataMax", number | "auto" | "dataMin" | "dataMax"];
 }
 
-export default function LineChart({
-  data,
-  xKey,
-  lines,
-  title,
-  height = 300,
-}: LineChartProps) {
+export default function LineChart({ data, xKey, lines, title, height = 300, valueFormatter, domain }: LineChartProps) {
+  const t = useChartTheme();
   return (
     <div className="chart-container">
-      {title && (
-        <h3 className="font-semibold text-gray-800 text-sm mb-4">{title}</h3>
-      )}
+      {title && <h3 className="card-title mb-4">{title}</h3>}
       <ResponsiveContainer width="100%" height={height}>
-        <RechartsLineChart
-          data={data}
-          margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis
-            dataKey={xKey}
-            tick={{ fontSize: 11, fill: "#6b7280" }}
-            axisLine={{ stroke: "#e5e7eb" }}
-            tickLine={false}
-          />
+        <RechartsLineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
+          <XAxis dataKey={xKey} tick={{ fontSize: 11, fill: t.axis }} axisLine={{ stroke: t.axisLine }} tickLine={false} />
           <YAxis
-            tick={{ fontSize: 11, fill: "#6b7280" }}
+            tick={{ fontSize: 11, fill: t.axis }}
             axisLine={false}
             tickLine={false}
+            tickFormatter={valueFormatter}
+            domain={domain ?? ["auto", "auto"]}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: "white",
-              border: "1px solid #e5e7eb",
-              borderRadius: "8px",
-              fontSize: "12px",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-            }}
+            contentStyle={t.tooltip}
+            formatter={valueFormatter ? (v) => valueFormatter(Number(v)) : undefined}
           />
-          <Legend
-            wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }}
-          />
+          <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }} />
           {lines.map((line) => (
             <Line
               key={line.key}
@@ -72,8 +56,10 @@ export default function LineChart({
               stroke={line.color}
               name={line.name}
               strokeWidth={2}
-              dot={{ fill: line.color, r: 3 }}
+              strokeDasharray={line.dashed ? "5 4" : undefined}
+              dot={data.length <= 30 ? { fill: line.color, r: 3 } : false}
               activeDot={{ r: 5 }}
+              connectNulls
             />
           ))}
         </RechartsLineChart>
