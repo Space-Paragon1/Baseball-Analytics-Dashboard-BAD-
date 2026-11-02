@@ -1,17 +1,22 @@
-"""Create the database tables and load the sample data (if the database is empty).
+"""Create or upgrade the database tables and load the sample data (if the database is empty).
 
-Run from the project root:
+The API does this on startup too. Run from the project root:
     python -m backend.init_db
 """
 
-from backend import models  # noqa: F401  (registers tables with Base)
-from backend.database import Base, SessionLocal, engine
+import sys
+
+from backend.database import SessionLocal, engine
+from backend.migrate import DatabaseVersionError, migrate_database
 from backend.services.records import seed_sample_data
 
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
-    print("Tables ready.")
+    try:
+        migrate_database(engine)
+    except DatabaseVersionError as exc:
+        sys.exit(f"Database not upgraded: {exc}")
+    print("Database schema is up to date.")
     with SessionLocal() as db:
         loaded = seed_sample_data(db)
     print(f"Loaded {loaded} sample records." if loaded else "Database already has data; skipped sample load.")
