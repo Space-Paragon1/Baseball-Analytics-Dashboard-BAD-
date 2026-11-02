@@ -39,7 +39,7 @@ A full-stack baseball stats app. Load box scores from a CSV, real MLB games, or 
 - **Database migrations** (Alembic) run automatically on startup, so upgrades keep your data.
 - SQLite by default, PostgreSQL via `DATABASE_URL`. Both are tested in CI.
 - Dark mode (no flash on load), mobile layout, keyboard focus styles, and a live API status indicator.
-- Backend tests (on SQLite and PostgreSQL), frontend tests, linting and a Docker build run in CI on every push.
+- Backend tests (on SQLite and PostgreSQL), frontend tests, browser tests of the main flows, linting and a Docker build run in CI on every push.
 
 ## Tech stack
 
@@ -49,7 +49,7 @@ A full-stack baseball stats app. Load box scores from a CSV, real MLB games, or 
 | Auth | PyJWT (HS256), bcrypt |
 | Frontend | Next.js 16 (Pages Router), React 19, TypeScript, Tailwind CSS, Recharts |
 | Data | SQLite or PostgreSQL; MLB Stats API (via httpx) |
-| Tooling | pytest, Ruff, Jest + Testing Library, ESLint, GitHub Actions, Docker |
+| Tooling | pytest, Ruff, Jest + Testing Library, Playwright, ESLint, GitHub Actions, Docker |
 
 ---
 
@@ -229,7 +229,19 @@ npm run typecheck
 npm run build
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) runs all of the above, including the PostgreSQL run, plus a production dependency audit and a Docker build, on every push to `main` and every pull request.
+### Browser tests
+
+`frontend/e2e/` holds Playwright tests that click through the app in a real browser: browsing, sorting and filtering, Game Mode, editing records, CSV upload, the Users and Account pages, and sign-in lockouts. Any unexpected error in the browser console fails a test.
+
+```bash
+cd frontend
+npx playwright install chromium   # once
+npm run e2e                       # builds the frontend, then runs the tests
+```
+
+The tests start their own API and frontend on ports 8000 and 3000, with a fresh temporary database. Stop your dev servers first; the tests won't reuse them, so they never touch your data. They need the backend's Python packages, so run them with your virtual environment active, or point `PYTHON` at its interpreter (`PYTHON=../.venv/bin/python npm run e2e`). Useful extras: `npx playwright test --ui` to watch them run, and `npx playwright show-report` after a failure.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs all of the above, including the PostgreSQL run and the browser tests, plus a production dependency audit and a Docker build, on every push to `main` and every pull request. When a browser test fails, the run keeps a report with screenshots and a step-by-step trace (under the run's Artifacts).
 
 ## Project structure
 
@@ -261,6 +273,7 @@ frontend/
   hooks/useAsync.ts    data loading that ignores stale responses
   utils/               API client and number formatting
   __tests__/           Jest suite
+  e2e/                 Playwright browser tests (playwright.config.ts starts the servers)
 data/sample_data.csv
 docs/screenshots/
 ```
