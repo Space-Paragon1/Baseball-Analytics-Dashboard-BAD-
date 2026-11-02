@@ -1,94 +1,77 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  ReactNode,
-} from "react";
-import api from "../utils/api";
-
-interface AuthUser {
-  username: string;
-  email: string;
-}
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { AUTH_EXPIRED_EVENT, TOKEN_KEY, authLogin, authMe, authRegister } from "../utils/api";
+import type { AuthResponse, AuthUser } from "../types";
 
 interface AuthContextType {
   user: AuthUser | null;
-  token: string | null;
-  login: (username: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  /** False until the stored token has been checked with the server. */
+  ready: boolean;
+  /** True after a session expired, until the next sign-in. */
+  expired: boolean;
+  login: (username: string, password: string) => Promise<AuthUser>;
+  register: (username: string, email: string, password: string) => Promise<AuthUser>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  token: null,
-  login: async () => {},
-  register: async () => {},
+  ready: false,
+  expired: false,
+  login: async () => {
+    throw new Error("AuthProvider missing");
+  },
+  register: async () => {
+    throw new Error("AuthProvider missing");
+  },
   logout: () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [expired, setExpired] = useState(false);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("auth_token");
-    const storedUser = localStorage.getItem("auth_user");
-    if (storedToken && storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser) as AuthUser;
-        setToken(storedToken);
-        setUser(parsedUser);
-        api.defaults.headers.common["Authorization"] = `Bearer ${storedToken}`;
-      } catch {
-        localStorage.removeItem("auth_token");
-        localStorage.removeItem("auth_user");
-      }
-    }
+    // Validate any stored token instead of trusting cached user info.
+    const check = localStorage.getItem(TOKEN_KEY)
+      ? authMe()
+          .then(setUser)
+          .catch(() => localStorage.removeItem(TOKEN_KEY))
+      : Promise.resolve();
+    check.finally(() => setReady(true));
   }, []);
 
-  const login = async (username: string, password: string) => {
-    const res = await api.post<{ access_token: string; username: string; email: string }>(
-      "/auth/login",
-      { username, password }
-    );
-    const { access_token, username: uname, email } = res.data;
-    const authUser: AuthUser = { username: uname, email };
-    setToken(access_token);
-    setUser(authUser);
-    localStorage.setItem("auth_token", access_token);
-    localStorage.setItem("auth_user", JSON.stringify(authUser));
-    api.defaults.headers.common["Authorization"] = `Bearer ${access_token}`;
-  };
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null);
+      setExpired(true);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+  }, []);
 
-  const register = async (username: string, email: string, password: string) => {
-    const res = await api.post<{ access_token: string; username: string; email: string }>(
-      "/auth/register",
-      { username, email, password }
-    );
-    const { access_token, username: uname, email: em } = res.data;
-    const authUser: AuthUser = { username: uname, email: em };
-    setToken(access_token);
-    setUser(authUser);
-    localStorage.setItem("auth_token", access_token);
-    localStorage.setItem("auth_user", JSON.stringify(authUser));
-    api.defaults.headers.common["Authorization"] = `Bearer ${access_token}`;
-  };
+  const accept = useCallback((res: AuthResponse) => {
+    localStorage.setItem(TOKEN_KEY, res.access_token);
+    setUser(res.user);
+    setExpired(false);
+    return res.user;
+  }, []);
 
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("auth_user");
-    delete api.defaults.headers.common["Authorization"];
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, token, login, register, logout }}>
-      {children}
-    </AuthContext.Provider>
+  const login = useCallback(async (u: string, p: string) => accept(await authLogin(u, p)), [accept]);
+  const register = useCallback(
+    async (u: string, e: string, p: string) => accept(await authRegister(u, e, p)),
+    [accept]
   );
+  const logout = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY);
+    setUser(null);
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, ready, expired, login, register, logout }),
+    [user, ready, expired, login, register, logout]
+  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

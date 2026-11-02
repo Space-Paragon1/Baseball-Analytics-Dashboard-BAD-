@@ -1,211 +1,174 @@
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
-import LoadingSpinner from "../components/LoadingSpinner";
-import ErrorMessage from "../components/ErrorMessage";
+import { useState } from "react";
+import StatTable, { Column } from "../components/StatTable";
 import PieChart from "../components/Charts/PieChart";
 import LineChart from "../components/Charts/LineChart";
-import { fetchTeams, fetchTeam, fetchTeamGames } from "../utils/api";
-import type { Team, TeamDetail, TeamGame } from "../types";
+import LoadingSpinner from "../components/LoadingSpinner";
+import ErrorMessage from "../components/ErrorMessage";
+import { SharedDateRange } from "../components/Filters";
+import { battingColumns, pitchingColumns } from "../components/columns";
+import { EmptyState, PageHeader, Spinner } from "../components/ui";
+import { useData } from "../context/DataContext";
+import { useAsync } from "../hooks/useAsync";
+import { fetchTeam, fetchTeamGames, fetchTeams } from "../utils/api";
+import { formatAvg, formatDate, formatRate, formatSigned, lastName } from "../utils/format";
+import type { DateRange, Team } from "../types";
 
-function formatAvg(val: number): string {
-  if (!val && val !== 0) return ".000";
-  return "." + Math.round(val * 1000).toString().padStart(3, "0");
+const diffClass = (d: number | null) =>
+  d == null ? "" : d > 0 ? "text-emerald-600 dark:text-emerald-400" : d < 0 ? "text-red-600 dark:text-red-400" : "";
+
+const standingsColumns: Column<Team>[] = [
+  { key: "team", label: "Team", render: (t) => <span className="font-semibold">{t.team}</span> },
+  { key: "games", label: "G", numeric: true },
+  { key: "wins", label: "W", numeric: true },
+  { key: "losses", label: "L", numeric: true, lowerIsBetter: true },
+  { key: "ties", label: "T", numeric: true },
+  { key: "win_pct", label: "PCT", numeric: true, title: "Winning percentage (ties count as half)", render: (t) => formatAvg(t.win_pct) },
+  { key: "total_runs", label: "RS", numeric: true, title: "Runs scored" },
+  { key: "runs_allowed", label: "RA", numeric: true, lowerIsBetter: true, title: "Runs allowed", render: (t) => t.runs_allowed ?? "—" },
+  {
+    key: "run_diff",
+    label: "DIFF",
+    numeric: true,
+    title: "Run differential",
+    render: (t) => <span className={`font-semibold ${diffClass(t.run_diff)}`}>{formatSigned(t.run_diff)}</span>,
+  },
+  {
+    key: "pythag_pct",
+    label: "xPCT",
+    numeric: true,
+    title: "Pythagorean expected winning % from runs scored and allowed",
+    render: (t) => formatAvg(t.pythag_pct),
+  },
+  { key: "batting_avg", label: "AVG", numeric: true, render: (t) => formatAvg(t.batting_avg) },
+  { key: "ops", label: "OPS", numeric: true, render: (t) => formatAvg(t.ops) },
+  { key: "total_home_runs", label: "HR", numeric: true },
+  { key: "team_era", label: "ERA", numeric: true, lowerIsBetter: true, render: (t) => formatRate(t.team_era) },
+  { key: "team_whip", label: "WHIP", numeric: true, lowerIsBetter: true, render: (t) => formatRate(t.team_whip) },
+];
+
+const rosterBatting = battingColumns.filter((c) =>
+  ["player_name", "position", "games_played", "plate_appearances", "batting_avg", "obp", "slg", "ops", "home_runs", "rbi"].includes(c.key)
+);
+const rosterPitching = pitchingColumns.filter((c) =>
+  ["player_name", "games", "innings_pitched", "era", "fip", "whip", "k_per_9", "strikeouts_pitched"].includes(c.key)
+);
+
+function TeamDetailPanel({ team, range }: { team: string; range: DateRange }) {
+  const { data, loading, error } = useAsync(
+    () => Promise.all([fetchTeam(team, range), fetchTeamGames(team, range)]),
+    [team, range.start, range.end]
+  );
+  if (loading) {
+    return (
+      <div className="flex justify-center py-10 text-blue-600">
+        <Spinner className="w-6 h-6" />
+      </div>
+    );
+  }
+  if (error || !data) return <p className="p-4 text-sm text-red-600">{error}</p>;
+  const [detail, games] = data;
+  const recent = games.slice(-10).reverse();
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="card overflow-hidden">
+          <h3 className="card-title px-4 pt-3 pb-2">Hitters</h3>
+          <StatTable columns={rosterBatting} rows={detail.roster_batting} rowKey={(r) => r.player_id} initialSort={{ key: "ops", desc: true }} showRank={false} />
+        </div>
+        <div className="card overflow-hidden">
+          <h3 className="card-title px-4 pt-3 pb-2">Pitchers</h3>
+          <StatTable columns={rosterPitching} rows={detail.roster_pitching} rowKey={(r) => r.player_id} initialSort={{ key: "innings_pitched", desc: true }} showRank={false} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="xl:col-span-2">
+          <LineChart
+            data={games.map((g) => ({ date: formatDate(g.game_date, false), scored: g.runs_scored, allowed: g.runs_allowed }))}
+            xKey="date"
+            lines={[
+              { key: "scored", color: "#10b981", name: "Runs scored" },
+              { key: "allowed", color: "#ef4444", name: "Runs allowed" },
+            ]}
+            title="Runs by game"
+            height={240}
+          />
+        </div>
+        <PieChart
+          data={detail.roster_batting.filter((p) => p.runs > 0).map((p) => ({ name: lastName(p.player_name), value: p.runs }))}
+          title="Who scores the runs"
+          height={240}
+        />
+      </div>
+
+      <div className="card overflow-x-auto">
+        <h3 className="card-title px-4 pt-3 pb-2">Last 10 games</h3>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Opponent</th>
+              <th>Result</th>
+              <th className="num">Score</th>
+              <th className="num">H</th>
+              <th className="num">HR</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recent.map((g) => (
+              <tr key={g.game_id}>
+                <td>{formatDate(g.game_date)}</td>
+                <td>{g.opponent}</td>
+                <td>
+                  <span className={g.result === "W" ? "badge bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" : g.result === "L" ? "badge bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300" : "badge-gray"}>
+                    {g.result ?? "?"}
+                  </span>
+                </td>
+                <td className="num">
+                  {g.runs_scored}-{g.runs_allowed ?? "?"}
+                </td>
+                <td className="num">{g.hits}</td>
+                <td className="num">{g.home_runs}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 export default function TeamsPage() {
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
-  const [teamDetail, setTeamDetail] = useState<TeamDetail | null>(null);
-  const [teamGames, setTeamGames] = useState<TeamGame[]>([]);
-  const [detailLoading, setDetailLoading] = useState(false);
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchTeams();
-      setTeams(data);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load team data.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const handleTeamClick = async (teamName: string) => {
-    if (expandedTeam === teamName) {
-      setExpandedTeam(null);
-      setTeamDetail(null);
-      setTeamGames([]);
-      return;
-    }
-    setExpandedTeam(teamName);
-    setDetailLoading(true);
-    try {
-      const [detail, games] = await Promise.all([
-        fetchTeam(teamName),
-        fetchTeamGames(teamName),
-      ]);
-      setTeamDetail(detail);
-      setTeamGames(games);
-    } catch {
-      setTeamDetail(null);
-      setTeamGames([]);
-    } finally {
-      setDetailLoading(false);
-    }
-  };
-
-  if (loading) return <LoadingSpinner />;
-  if (error) return <ErrorMessage message={error} onRetry={load} />;
+  const { range, version } = useData();
+  const { data, error, loading, reload } = useAsync(() => fetchTeams(range), [range.start, range.end, version]);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   return (
     <div>
-      <h1 className="page-title">Team Analytics</h1>
-      <p className="page-subtitle">Team standings and performance overview</p>
-
-      {/* Team Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
-        {teams.map((team) => (
-          <div key={team.team} className="stat-card cursor-pointer" onClick={() => handleTeamClick(team.team)}>
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">{team.team}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Season Stats</p>
-              </div>
-              <div className="flex items-center gap-1 text-gray-400">
-                {expandedTeam === team.team ? (
-                  <ChevronUp className="w-5 h-5 text-blue-500" />
-                ) : (
-                  <ChevronDown className="w-5 h-5" />
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-blue-50 rounded-lg p-2.5">
-                <p className="text-xs text-blue-600 font-medium">Team AVG</p>
-                <p className="text-xl font-bold text-blue-800 mt-0.5">
-                  {formatAvg(team.batting_avg)}
-                </p>
-              </div>
-              <div className="bg-emerald-50 rounded-lg p-2.5">
-                <p className="text-xs text-emerald-600 font-medium">Runs Scored</p>
-                <p className="text-xl font-bold text-emerald-800 mt-0.5">
-                  {team.total_runs}
-                </p>
-              </div>
-              <div className="bg-amber-50 rounded-lg p-2.5">
-                <p className="text-xs text-amber-600 font-medium">Home Runs</p>
-                <p className="text-xl font-bold text-amber-800 mt-0.5">
-                  {team.total_home_runs}
-                </p>
-              </div>
-              <div className="bg-purple-50 rounded-lg p-2.5">
-                <p className="text-xs text-purple-600 font-medium">Team ERA</p>
-                <p className="text-xl font-bold text-purple-800 mt-0.5">
-                  {team.team_era ? team.team_era.toFixed(2) : "N/A"}
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Expanded Team Detail */}
-      {expandedTeam && (
-        <div className="bg-white rounded-xl shadow-card border border-gray-100 p-5">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">
-            {expandedTeam} — Detailed View
-          </h2>
-
-          {detailLoading ? (
-            <div className="flex justify-center py-10">
-              <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-700 rounded-full animate-spin" />
-            </div>
-          ) : (
-            <>
-              {/* Roster Table */}
-              {teamDetail && teamDetail.roster_batting.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="font-semibold text-gray-700 text-sm mb-3">
-                    Batting Roster
-                  </h3>
-                  <div className="overflow-x-auto rounded-lg border border-gray-100">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Player</th>
-                          <th>Pos</th>
-                          <th>GP</th>
-                          <th>AVG</th>
-                          <th>OPS</th>
-                          <th>HR</th>
-                          <th>RBI</th>
-                          <th>H</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {teamDetail.roster_batting.map((p) => (
-                          <tr key={p.player_name}>
-                            <td className="font-semibold">{p.player_name}</td>
-                            <td className="text-gray-500">{p.position}</td>
-                            <td>{p.games_played}</td>
-                            <td className="font-bold text-blue-700">
-                              {formatAvg(p.batting_avg)}
-                            </td>
-                            <td>{p.ops.toFixed(3)}</td>
-                            <td>{p.home_runs}</td>
-                            <td>{p.rbi}</td>
-                            <td>{p.hits}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {teamDetail && teamDetail.roster_batting.length > 0 && (
-                  <PieChart
-                    data={teamDetail.roster_batting.map((p) => ({
-                      name: p.player_name.split(" ")[1] || p.player_name,
-                      value: p.runs,
-                    }))}
-                    title={`${expandedTeam} — Run Contributions`}
-                    height={260}
-                  />
-                )}
-
-                {teamGames.length > 0 && (
-                  <LineChart
-                    data={teamGames.map((g) => ({
-                      game_date: g.game_date.slice(5),
-                      runs_scored: g.runs_scored,
-                      hits_total: g.hits_total,
-                    })) as Record<string, unknown>[]}
-                    xKey="game_date"
-                    lines={[
-                      { key: "runs_scored", color: "#3b82f6", name: "Runs" },
-                      { key: "hits_total", color: "#10b981", name: "Hits" },
-                    ]}
-                    title={`${expandedTeam} — Performance Over Time`}
-                    height={260}
-                  />
-                )}
-              </div>
-            </>
-          )}
+      <PageHeader title="Teams & Standings" subtitle="Click a team for its roster, game log and scoring breakdown." actions={<SharedDateRange />} />
+      {loading && !data ? (
+        <LoadingSpinner />
+      ) : error ? (
+        <ErrorMessage message={error} onRetry={reload} />
+      ) : data && data.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <div className="card overflow-hidden">
+          <StatTable
+            columns={standingsColumns}
+            rows={data ?? []}
+            rowKey={(t) => t.team}
+            initialSort={{ key: "win_pct", desc: true }}
+            onRowClick={(t) => setExpanded((cur) => (cur === t.team ? null : t.team))}
+            expandedKey={expanded}
+            renderExpanded={(t) => <TeamDetailPanel team={t.team} range={range} />}
+          />
         </div>
       )}
+      <p className="text-xs muted mt-2">
+        Results come from runs scored by each side in a game. xPCT is the record a team “should” have from its run differential.
+      </p>
     </div>
   );
 }
