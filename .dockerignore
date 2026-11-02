@@ -10,6 +10,9 @@
 **/node_modules
 **/.next
 frontend/coverage
+frontend/e2e
+frontend/playwright-report
+frontend/test-results
 frontend/*.tsbuildinfo
 backend/tests
 venv

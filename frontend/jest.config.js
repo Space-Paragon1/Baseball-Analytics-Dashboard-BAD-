@@ -6,5 +6,6 @@ module.exports = createJestConfig({
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   testEnvironment: "jsdom",
   moduleNameMapper: { "^@/(.*)$": "<rootDir>/$1" },
-  testPathIgnorePatterns: ["<rootDir>/.next/", "<rootDir>/node_modules/"],
+  // e2e/ holds the Playwright browser tests (npm run e2e).
+  testPathIgnorePatterns: ["<rootDir>/.next/", "<rootDir>/node_modules/", "<rootDir>/e2e/"],
 });

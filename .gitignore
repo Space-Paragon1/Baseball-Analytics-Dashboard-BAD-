@@ -46,6 +46,9 @@ frontend/.next/
 frontend/out/
 frontend/build/
 frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/e2e/.auth/
 frontend/*.tsbuildinfo
 
 # Logs
