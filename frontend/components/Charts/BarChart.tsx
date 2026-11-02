@@ -1,13 +1,14 @@
 import {
-  BarChart as RechartsBarChart,
   Bar,
+  CartesianGrid,
+  Legend,
+  BarChart as RechartsBarChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
 } from "recharts";
+import { useChartTheme } from "./chartTheme";
 
 interface BarConfig {
   key: string;
@@ -21,57 +22,32 @@ interface BarChartProps {
   bars: BarConfig[];
   title?: string;
   height?: number;
+  valueFormatter?: (v: number) => string;
 }
 
-export default function BarChart({
-  data,
-  xKey,
-  bars,
-  title,
-  height = 300,
-}: BarChartProps) {
+export default function BarChart({ data, xKey, bars, title, height = 300, valueFormatter }: BarChartProps) {
+  const t = useChartTheme();
   return (
     <div className="chart-container">
-      {title && (
-        <h3 className="font-semibold text-gray-800 text-sm mb-4">{title}</h3>
-      )}
+      {title && <h3 className="card-title mb-4">{title}</h3>}
       <ResponsiveContainer width="100%" height={height}>
-        <RechartsBarChart
-          data={data}
-          margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis
-            dataKey={xKey}
-            tick={{ fontSize: 11, fill: "#6b7280" }}
-            axisLine={{ stroke: "#e5e7eb" }}
-            tickLine={false}
-          />
+        <RechartsBarChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
+          <XAxis dataKey={xKey} tick={{ fontSize: 11, fill: t.axis }} axisLine={{ stroke: t.axisLine }} tickLine={false} />
           <YAxis
-            tick={{ fontSize: 11, fill: "#6b7280" }}
+            tick={{ fontSize: 11, fill: t.axis }}
             axisLine={false}
             tickLine={false}
+            tickFormatter={valueFormatter}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: "white",
-              border: "1px solid #e5e7eb",
-              borderRadius: "8px",
-              fontSize: "12px",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-            }}
+            contentStyle={t.tooltip}
+            cursor={{ fill: t.grid, opacity: 0.4 }}
+            formatter={valueFormatter ? (v) => valueFormatter(Number(v)) : undefined}
           />
-          <Legend
-            wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }}
-          />
+          <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }} />
           {bars.map((bar) => (
-            <Bar
-              key={bar.key}
-              dataKey={bar.key}
-              fill={bar.color}
-              name={bar.name}
-              radius={[3, 3, 0, 0]}
-            />
+            <Bar key={bar.key} dataKey={bar.key} fill={bar.color} name={bar.name} radius={[3, 3, 0, 0]} />
           ))}
         </RechartsBarChart>
       </ResponsiveContainer>

@@ -1,4 +1,4 @@
-version: "3.9"
+# Settings come from a .env file next to this one (see .env.example).
 services:
   backend:
     build:
@@ -6,31 +6,28 @@ services:
       dockerfile: Dockerfile.backend
     ports:
       - "8000:8000"
-    volumes:
-      - ./data:/app/data
-      - baseball_db:/app
     environment:
-      - DATABASE_URL=${DATABASE_URL:-}
-      - SECRET_KEY=${SECRET_KEY:-supersecretkey}
-    networks:
-      - app-network
+      # Leave SECRET_KEY empty and sign-ins reset whenever the container restarts.
+      SECRET_KEY: ${SECRET_KEY:-}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/db/baseball.db}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+    volumes:
+      - baseball_db:/app/db
+    restart: unless-stopped
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
     depends_on:
-      - backend
-    networks:
-      - app-network
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   baseball_db:
-
-networks:
-  app-network:
-    driver: bridge

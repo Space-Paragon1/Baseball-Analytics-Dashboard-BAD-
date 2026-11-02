@@ -1,125 +1,136 @@
-import io
+"""Read-only endpoints against the sample data."""
+
 import pytest
-from fastapi.testclient import TestClient
-from backend.main import app
-
-client = TestClient(app)
 
 
-def test_health_returns_200():
-    """GET /health should return 200 with status ok."""
-    response = client.get("/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ok"
+def test_health(client):
+    assert client.get("/health").json()["status"] == "ok"
 
 
-def test_get_players_returns_list():
-    """GET /players should return a list."""
-    response = client.get("/players")
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
+def test_meta(client, seeded):
+    meta = client.get("/meta").json()
+    assert meta["teams"] == ["Eagles", "Tigers", "Wolves"]
+    assert meta["total_records"] == 240
+    assert len(meta["players"]) == 15
+    assert meta["date_range"] == {"min": "2025-03-15", "max": "2025-06-14"}
 
 
-def test_get_batting_stats_returns_sorted_list():
-    """GET /stats/batting should return a list sorted by batting_avg descending."""
-    response = client.get("/stats/batting")
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-    if len(data) > 1:
-        for i in range(len(data) - 1):
-            assert data[i]["batting_avg"] >= data[i + 1]["batting_avg"]
+def test_empty_database_is_handled(client):
+    assert client.get("/stats/batting").json() == []
+    assert client.get("/stats/dashboard").json()["total_games"] == 0
+    assert client.get("/teams").json() == []
+    assert client.get("/meta").json()["players"] == []
 
 
-def test_get_pitching_stats_returns_sorted_list():
-    """GET /stats/pitching should return a list sorted by ERA ascending."""
-    response = client.get("/stats/pitching")
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-    if len(data) > 1:
-        for i in range(len(data) - 1):
-            assert data[i]["era"] <= data[i + 1]["era"]
+def test_dashboard(client, seeded):
+    d = client.get("/stats/dashboard").json()
+    assert d["total_games"] == 24
+    assert d["top_performer"]["player_id"]
+    assert d["top_pitcher"]["era"] is not None
+    assert len(d["top5_batters"]) == 5
+    assert len(d["teams"]) == 3 and "wins" in d["teams"][0]
 
 
-def test_get_dashboard_returns_required_keys():
-    """GET /stats/dashboard should include all required keys."""
-    response = client.get("/stats/dashboard")
-    assert response.status_code == 200
-    data = response.json()
-    required_keys = [
-        "total_games", "total_runs", "league_batting_avg",
-        "top_performer", "top_pitcher", "teams", "recent_trend", "top5_batters"
-    ]
-    for key in required_keys:
-        assert key in data, f"Missing key: {key}"
+def test_batting_leaderboard_sorted_and_filterable(client, seeded):
+    rows = client.get("/stats/batting").json()
+    avgs = [r["batting_avg"] for r in rows]
+    assert avgs == sorted(avgs, reverse=True)
+    assert {"woba", "iso", "babip", "k_pct", "qualified"} <= rows[0].keys()
+    eagles = client.get("/stats/batting?team=eagles").json()
+    assert eagles and all(r["team"] == "Eagles" for r in eagles)
 
 
-def test_get_insights_returns_list_of_strings():
-    """GET /stats/insights should return a list of strings."""
-    response = client.get("/stats/insights")
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-    for item in data:
-        assert isinstance(item, str)
+def test_pitching_leaderboard(client, seeded):
+    rows = client.get("/stats/pitching").json()
+    eras = [r["era"] for r in rows]
+    assert eras == sorted(eras)
+    assert {"fip", "k_bb", "hr_per_9", "innings_pitched"} <= rows[0].keys()
 
 
-def test_get_teams_returns_list():
-    """GET /teams should return a list."""
-    response = client.get("/teams")
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
+def test_date_filter_narrows_results(client, seeded):
+    all_games = client.get("/stats/dashboard").json()["total_games"]
+    april = client.get("/stats/dashboard?start_date=2025-04-01&end_date=2025-04-30").json()["total_games"]
+    assert 0 < april < all_games
 
 
-def test_upload_csv_with_valid_csv():
-    """POST /upload-csv with valid CSV should succeed."""
-    csv_content = (
-        "player_id,player_name,team,position,game_date,at_bats,hits,doubles,triples,"
-        "home_runs,runs,rbi,strikeouts,walks,hit_by_pitch,innings_pitched,"
-        "earned_runs,hits_allowed,walks_allowed,strikeouts_pitched,game_id,opponent\n"
-        "1,Test Player,Eagles,OF,2025-05-01,4,2,0,0,1,2,2,1,0,0,0.0,0,0,0,0,G999,Tigers\n"
-    )
-    file_bytes = csv_content.encode("utf-8")
-    response = client.post(
-        "/upload-csv",
-        files={"file": ("test.csv", io.BytesIO(file_bytes), "text/csv")},
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["success"] is True
-    assert data["rows_loaded"] >= 1
+@pytest.mark.parametrize("query", ["start_date=not-a-date", "start_date=2025-05-01&end_date=2025-04-01"])
+def test_bad_dates_are_rejected(client, seeded, query):
+    assert client.get(f"/stats/batting?{query}").status_code == 422
 
 
-def test_upload_csv_with_missing_columns_returns_400():
-    """POST /upload-csv with missing required columns should return 400."""
-    csv_content = "player_id,player_name\n1,Bad Player\n"
-    file_bytes = csv_content.encode("utf-8")
-    response = client.post(
-        "/upload-csv",
-        files={"file": ("bad.csv", io.BytesIO(file_bytes), "text/csv")},
-    )
-    assert response.status_code == 400
-    data = response.json()
-    assert "missing" in data["detail"].lower() or "required" in data["detail"].lower()
+def test_insights_follow_date_filter(client, seeded):
+    all_time = client.get("/stats/insights").json()
+    one_game = client.get("/stats/insights?start_date=2025-03-15&end_date=2025-03-15").json()
+    assert all_time and one_game and all_time != one_game
 
 
-def test_dashboard_date_filter():
-    """GET /stats/dashboard with date params should return 200."""
-    response = client.get("/stats/dashboard?start_date=2025-01-01&end_date=2025-12-31")
-    assert response.status_code == 200
+def test_teams(client, seeded):
+    teams = client.get("/teams").json()
+    total_w = sum(t["wins"] for t in teams)
+    total_l = sum(t["losses"] for t in teams)
+    assert total_w == total_l  # every win is someone's loss
+    detail = client.get("/teams/eagles").json()
+    assert detail["team"] == "Eagles"
+    assert len(detail["roster_batting"]) == 4 and len(detail["roster_pitching"]) == 1
+    games = client.get("/teams/Eagles/games").json()
+    assert {g["result"] for g in games} <= {"W", "L", "T"}
+    assert client.get("/teams/Nobody").status_code == 404
 
 
-def test_batting_stats_date_filter():
-    """GET /stats/batting with date params should return 200."""
-    response = client.get("/stats/batting?start_date=2025-01-01&end_date=2025-12-31")
-    assert response.status_code == 200
+def test_player_detail_trend_and_compare(client, seeded):
+    p = client.get("/players/1").json()
+    assert p["player_name"] == "Marcus Rivera" and p["batting"] and p["pitching"] is None
+    assert len(p["game_logs"]) == 18
+    trend = client.get("/players/1/trend?stat=ops").json()
+    assert len(trend) == 18 and "cumulative" in trend[0]
+    assert client.get("/players/1/trend?stat=bogus").status_code == 400
+    assert client.get("/players/999").status_code == 404
+
+    cmp = client.get("/players/compare?ids=1&ids=3").json()
+    assert cmp[0]["batting"] and cmp[1]["pitching"]
+    assert client.get("/players/compare?ids=1").status_code == 400
+    assert client.get("/players/compare?ids=1&ids=1").status_code == 400
+    assert client.get("/players/compare?ids=1&ids=999").status_code == 404
 
 
-def test_pitching_stats_date_filter():
-    """GET /stats/pitching with date params should return 200."""
-    response = client.get("/stats/pitching?start_date=2025-01-01&end_date=2025-12-31")
-    assert response.status_code == 200
+def test_exports(client, seeded):
+    csv = client.get("/export/batting-csv?qualified_only=true")
+    assert csv.status_code == 200 and csv.headers["content-type"].startswith("text/csv")
+    assert "woba" in csv.text.splitlines()[0]
+    assert client.get("/export/pitching-csv").status_code == 200
+    pdf = client.get("/export/player-pdf/3")
+    assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+    assert client.get("/export/player-pdf/999").status_code == 404
+
+
+def test_csv_export_neutralizes_formulas(client, admin_headers):
+    record = {
+        "player_name": "=HYPERLINK(1)",
+        "team": "Eagles",
+        "position": "CF",
+        "game_date": "2025-05-01",
+        "game_id": "G1",
+        "opponent": "Tigers",
+        "at_bats": 4,
+        "hits": 1,
+    }
+    assert client.post("/records", json=record, headers=admin_headers).status_code == 201
+    text = client.get("/export/batting-csv").text
+    assert "'=HYPERLINK(1)" in text
+
+
+def test_pdf_handles_markup_in_names(client, admin_headers):
+    record = {
+        "player_name": "<b>Bold</b> & Co",
+        "team": "Eagles",
+        "position": "CF",
+        "game_date": "2025-05-01",
+        "game_id": "G1",
+        "opponent": "Tigers",
+        "at_bats": 4,
+        "hits": 1,
+    }
+    pid = client.post("/records", json=record, headers=admin_headers).json()["player_id"]
+    r = client.get(f"/export/player-pdf/{pid}")
+    assert r.status_code == 200
+    assert 'filename="b_Bold_b_Co_player_card.pdf"' in r.headers["content-disposition"]

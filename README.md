@@ -1,289 +1,245 @@
 # Baseball Analytics Dashboard (BAD)
 
-A full-stack baseball statistics analytics platform featuring real-time data visualization, player leaderboards, pitching analytics, team performance tracking, player comparison, export reports, dark/light mode, live game entry, JWT authentication, and PostgreSQL support.
+A full-stack baseball stats app. Load box scores from a CSV, real MLB games, or a game you score live, and get leaderboards with advanced stats, standings, player trends, comparisons and exports.
 
----
+![Dashboard](docs/screenshots/dashboard.png)
 
-## Tech Stack
-
-| Layer     | Technology                                                      |
-|-----------|-----------------------------------------------------------------|
-| Backend   | Python 3.11+, FastAPI, SQLAlchemy, SQLite / PostgreSQL, Pandas  |
-| Frontend  | Next.js 14, TypeScript, Tailwind CSS, Recharts                  |
-| Charts    | Recharts (Bar, Line, Pie, Radar)                                |
-| Icons     | Lucide React                                                    |
-| Auth      | JWT (python-jose), bcrypt (passlib)                             |
-| Export    | reportlab (PDF), CSV streaming                                  |
+| Batting leaders | Game Mode | Teams (dark mode) |
+| --- | --- | --- |
+| ![Batting](docs/screenshots/batting.png) | ![Game Mode](docs/screenshots/game-mode.png) | ![Teams](docs/screenshots/teams-dark.png) |
 
 ---
 
 ## Features
 
-- **Dashboard** — League KPIs (games, runs, batting avg), auto-generated insights, recent trend charts, top-5 batters, date range filtering
-- **Player Analytics** — Searchable/filterable leaderboard, expandable player rows with trend charts, Export PDF / CSV
-- **Pitching Analytics** — ERA/WHIP/K9 leaderboard, strikeout vs walks charts, ERA trend line, Export CSV
-- **Team Analytics** — Team cards with season stats, expandable roster tables, run contribution pie chart
-- **Upload Data** — Drag & drop CSV upload with validation, sample template download
-- **Auto-Insights** — Backend generates English-language insights from stats
-- **Player Comparison** — Side-by-side stat table with best-value highlighting, grouped bar chart, radar chart
-- **Export Reports** — CSV downloads for batting/pitching leaderboards, PDF player cards via reportlab
-- **Dark / Light Mode** — Toggle persisted to localStorage, applies `dark` class to HTML root
-- **Manual Data Entry** — Form-based game record entry with autocomplete player names
-- **Unit Tests** — pytest tests for analytics service and API routes (12+ tests)
-- **Date Range Filtering** — Filter dashboard, batting, and pitching stats by start/end date
-- **Game Mode** — Live at-bat and pitch logging with running scoreboard, save to database
-- **Authentication (JWT)** — Register / Login / Logout, Bearer token, user display in navbar
-- **PostgreSQL Support** — `DATABASE_URL` env var selects SQLite (default) or PostgreSQL
+**Analytics**
+- **Dashboard**: league KPIs, standings, top hitters and pitchers, a scoring trend, and auto-generated insights in plain English.
+- **Batting leaders**: AVG, OBP, SLG, OPS, wOBA, ISO, BABIP, K% and BB%. Sort any column; hover a header to see the formula.
+- **Pitching leaders**: ERA, FIP, WHIP, K/9, BB/9, HR/9 and K/BB, with innings handled correctly (5.1 + 5.2 = 11.0).
+- **Qualified leaders**: rate-stat leaderboards use MLB's rule (3.1 PA or 1 IP per team game, with a small minimum), so a 1-for-1 cameo can't top the list.
+- **Player detail**: expand any row for a season-to-date trend, the last 10 games, and a PDF player card.
+- **Teams & standings**: W-L, run differential, Pythagorean expected record, team batting and pitching, roster and game log.
+- **Compare**: 2-3 players side by side, with the best value in each row highlighted.
+- **Date filter**: shared across pages and applied everywhere, including insights and exports.
+
+**Data**
+- **MLB import**: pulls real box scores (regular season and postseason) from MLB's public Stats API, by date range and team.
+- **Game Mode**: score a game one plate appearance at a time. It tracks runners, outs, innings, line score and RBIs, charges runs to the right pitcher, ends walk-offs correctly, and supports undo. Games are saved as you go and survive a refresh or restart.
+- **Game Log**: search, filter, edit and delete individual box-score lines.
+- **CSV upload**: every row is validated first, with row-by-row error messages. A bad file changes nothing. Choose append (updates matching rows) or replace.
+- **Exports**: leaderboard CSVs (respecting filters) and PDF player cards.
+
+**Platform**
+- Sign-in with roles: anyone can view; signed-in users can add and edit; the admin (the first account) can delete, upload and import.
+- Dark mode (no flash on load), mobile layout, keyboard focus styles, and a live API status indicator.
+- SQLite by default, PostgreSQL via `DATABASE_URL`.
+- Backend and frontend test suites, linting and a Docker build run in CI on every push.
+
+## Tech stack
+
+| Layer | Tech |
+| --- | --- |
+| Backend | Python 3.11+, FastAPI, SQLAlchemy 2, pandas, Pydantic 2 |
+| Auth | PyJWT (HS256), bcrypt |
+| Frontend | Next.js 16 (Pages Router), React 19, TypeScript, Tailwind CSS, Recharts |
+| Data | SQLite or PostgreSQL; MLB Stats API (via httpx) |
+| Tooling | pytest, Ruff, Jest + Testing Library, ESLint, GitHub Actions, Docker |
 
 ---
 
-## Project Structure
+## Quick start
 
-```
-Baseball-Analytics-Dashboard-BAD-/
-├── data/
-│   └── sample_data.csv
-├── backend/
-│   ├── main.py                  # FastAPI app, startup, CORS
-│   ├── database.py              # SQLAlchemy engine (SQLite/PostgreSQL)
-│   ├── init_db.py
-│   ├── requirements.txt
-│   ├── .env.example             # Environment variable template
-│   ├── models/
-│   │   ├── game_record.py
-│   │   └── user.py              # JWT User model
-│   ├── routes/
-│   │   ├── players.py           # /players + /players/compare
-│   │   ├── teams.py
-│   │   ├── stats.py             # /stats/* with date filtering
-│   │   ├── upload.py            # /upload-csv + /add-game-record
-│   │   ├── export.py            # /export/* CSV/PDF
-│   │   ├── game_mode.py         # /game-mode/* live entry
-│   │   └── auth.py              # /auth/register, /auth/login, /auth/me
-│   ├── services/
-│   │   ├── analytics.py
-│   │   └── auth_service.py      # JWT helpers
-│   └── tests/
-│       ├── __init__.py
-│       ├── test_analytics.py
-│       └── test_routes.py
-└── frontend/
-    ├── pages/
-    │   ├── index.tsx            # Dashboard with date picker
-    │   ├── players.tsx          # Batting leaderboard + Export CSV/PDF
-    │   ├── pitching.tsx         # Pitching leaderboard + Export CSV
-    │   ├── teams.tsx
-    │   ├── upload.tsx
-    │   ├── compare.tsx          # Player comparison tool
-    │   ├── add-game.tsx         # Manual data entry form
-    │   ├── game-mode.tsx        # Live game logging
-    │   ├── login.tsx
-    │   └── register.tsx
-    ├── components/
-    │   ├── Layout.tsx
-    │   ├── Sidebar.tsx          # All nav items including new pages
-    │   ├── Navbar.tsx           # Theme toggle + auth display
-    │   ├── StatsCard.tsx
-    │   ├── InsightsPanel.tsx
-    │   ├── LoadingSpinner.tsx
-    │   ├── ErrorMessage.tsx
-    │   ├── ExportButton.tsx     # Reusable export button
-    │   ├── DateRangePicker.tsx  # From/To date filter
-    │   └── Charts/
-    │       ├── BarChart.tsx
-    │       ├── LineChart.tsx
-    │       └── PieChart.tsx
-    ├── context/
-    │   ├── ThemeContext.tsx      # Dark/light mode
-    │   └── AuthContext.tsx      # JWT auth state
-    ├── types/index.ts
-    ├── utils/api.ts
-    └── styles/globals.css
-```
-
----
-
-## Setup & Installation
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- npm or yarn
-
-### Backend Setup
+### With Docker
 
 ```bash
-# From project root
-cd backend
+cp .env.example .env          # then set SECRET_KEY (see the file for a one-liner)
+docker compose up --build
+```
 
-# Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate     # Linux/macOS
-venv\Scripts\activate        # Windows
+Open http://localhost:3000. The API runs at http://localhost:8000 (interactive docs at http://localhost:8000/docs). The database lives in the `baseball_db` volume and starts with the sample data.
 
-# Install dependencies
-pip install -r requirements.txt
+### Local development
 
-# Optional: copy and configure env file
-cp .env.example .env
-# Edit .env with your settings
+**Backend** (from the project root):
 
-# Start the API server (from project root)
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements-dev.txt
+cp backend/.env.example backend/.env    # optional: set SECRET_KEY so sign-ins survive restarts
 uvicorn backend.main:app --reload --port 8000
 ```
 
-The backend automatically loads `data/sample_data.csv` on first startup if the database is empty.
+On first start the backend creates `baseball.db` in the project root and loads `data/sample_data.csv`. To do that by hand: `python -m backend.init_db`.
 
-### Frontend Setup
+**Frontend:**
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the development server
-npm run dev
+npm run dev        # http://localhost:3000
 ```
 
-Frontend runs at: `http://localhost:3000`
-Backend API runs at: `http://localhost:8000`
+The frontend calls `http://localhost:8000` by default; set `NEXT_PUBLIC_API_URL` to change it.
+
+### First steps
+
+1. Create an account. **The first account becomes the admin.**
+2. Try **MLB Import**: pick a team and "Last week", or a full season for one team.
+3. Score a game in **Game Mode**, then find it in the **Game Log** and leaderboards.
 
 ---
 
-## PostgreSQL Setup
+## Configuration
 
-To use PostgreSQL instead of SQLite:
+Backend settings come from environment variables (or `backend/.env`):
 
-1. Create a PostgreSQL database:
-   ```sql
-   CREATE DATABASE baseball_db;
-   ```
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `SECRET_KEY` | random per process | Signs login tokens. **Set it in production**, or every restart signs everyone out. |
+| `DATABASE_URL` | `sqlite:///<project>/baseball.db` | Any SQLAlchemy URL, e.g. `postgresql://user:pass@host:5432/db`. |
+| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated frontend origins allowed to call the API. |
+| `ALLOW_REGISTRATION` | `true` | Set to `false` to close sign-ups once the admin exists. |
+| `SEED_SAMPLE_DATA` | `true` | Load the sample CSV when the database is empty. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `720` | How long a sign-in lasts. |
+| `MAX_UPLOAD_MB` | `10` | Largest CSV accepted. |
 
-2. Create a `.env` file in `backend/`:
-   ```
-   DATABASE_URL=postgresql://user:password@localhost:5432/baseball_db
-   SECRET_KEY=your-secret-key-here
-   ```
+Frontend: `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) is baked in at build time. In Docker, set `PUBLIC_API_URL` in `.env`.
 
-3. Install psycopg2 (included in requirements.txt):
-   ```bash
-   pip install psycopg2-binary
-   ```
+> Upgrading from v2: the database schema changed (innings are now stored as outs, and there are new columns). Delete the old `baseball.db` and restart; the sample data reloads automatically.
 
-4. Start the backend — tables will be auto-created.
+## Permissions
 
----
+| Action | Who |
+| --- | --- |
+| View stats, leaderboards, exports | Anyone |
+| Add or edit records, use Game Mode | Signed-in users |
+| Delete records, upload CSVs, import MLB data | Admin (the first account) |
 
-## Authentication
-
-The app uses optional JWT authentication (data endpoints are public by default).
-
-- **Register**: `POST /auth/register` — `{ username, email, password }`
-- **Login**: `POST /auth/login` — `{ username, password }` → returns `access_token`
-- **Protected**: `GET /auth/me` — requires `Authorization: Bearer <token>` header
-
-The frontend stores the token in `localStorage` and attaches it to all axios requests.
+The frontend hides what you can't do, and the API enforces the same rules.
 
 ---
 
-## Running Tests
+## Data
+
+### CSV format
+
+Required columns, in any order: `player_name, team, position, game_date, game_id, opponent`.
+
+Optional columns (missing or blank = 0): `player_id, at_bats, hits, doubles, triples, home_runs, runs, rbi, strikeouts, walks, hit_by_pitch, sacrifice_flies, innings_pitched, earned_runs, hits_allowed, walks_allowed, strikeouts_pitched, home_runs_allowed, hit_batsmen`.
+
+- Dates are `YYYY-MM-DD`.
+- **Innings use box-score notation**: `6.1` means 6⅓ innings and `6.2` means 6⅔. `6.5` is rejected.
+- Each row is checked for consistency, e.g. hits ≤ at bats and home runs allowed ≤ hits allowed. Errors list the row number.
+- A player is matched by name (and team). Add `player_id` to tell apart two players with the same name.
+- One row per player per game. Re-uploading in "append" mode updates matching rows instead of duplicating them.
+
+The Upload page has a template with every column.
+
+### MLB import
+
+Uses `statsapi.mlb.com`; no API key is needed. Up to 250 games per import, which fits a full season for one team. Players keep their MLB ids, and re-importing a game updates it. MLB data is © MLB Advanced Media and is for personal, non-commercial use under [MLB's terms](http://gdx.mlb.com/components/copyright.txt).
+
+### Sample data
+
+`data/sample_data.csv` holds 24 made-up games between three teams (Eagles, Tigers, Wolves).
+
+---
+
+## Stat glossary
+
+| Stat | Formula |
+| --- | --- |
+| AVG | H / AB |
+| OBP | (H + BB + HBP) / (AB + BB + HBP + SF) |
+| SLG | TB / AB, where TB = 1B + 2×2B + 3×3B + 4×HR |
+| OPS | OBP + SLG |
+| ISO | SLG − AVG |
+| BABIP | (H − HR) / (AB − K − HR + SF) |
+| wOBA | (0.696·BB + 0.726·HBP + 0.883·1B + 1.244·2B + 1.569·3B + 2.004·HR) / PA (2023 FanGraphs weights) |
+| K%, BB% | K / PA, BB / PA |
+| ERA | 9 × ER / IP |
+| WHIP | (BB + H) / IP |
+| K/9, BB/9, HR/9 | 9 × stat / IP |
+| FIP | (13·HR + 3·(BB + HBP) − 2·K) / IP + constant. The constant is calculated from the data so league FIP equals league ERA. |
+| Pythag W% | RS^1.83 / (RS^1.83 + RA^1.83) |
+
+Qualified for rate-stat leaderboards: batters need 3.1 PA per team game (at least 20); pitchers need 1 IP per team game (at least 10).
+
+---
+
+## API
+
+Interactive docs: http://localhost:8000/docs. Main endpoints:
+
+| Area | Endpoints |
+| --- | --- |
+| Lookup | `GET /meta`: teams, players, positions, date range |
+| Stats | `GET /stats/dashboard`, `/stats/batting`, `/stats/pitching`, `/stats/insights`. All accept `start_date`, `end_date`; leaderboards also take `team` and `qualified_only`. |
+| Players | `GET /players`, `/players/{id}`, `/players/{id}/trend?stat=ops`, `/players/compare?ids=1&ids=2` |
+| Teams | `GET /teams`, `/teams/{name}`, `/teams/{name}/games` |
+| Records | `GET /records` (search, filter, paginate), `POST /records`, `PUT /records/{id}`, `DELETE /records/{id}` |
+| Bulk data | `POST /upload-csv` (form: `file`, `mode`), `POST /import/mlb`, `GET /import/mlb/teams?season=` |
+| Game Mode | `POST /game-mode/start`, `GET /game-mode/sessions`, `GET /game-mode/{id}`, `POST /game-mode/{id}/pitcher`, `POST /game-mode/{id}/plate-appearance`, `POST /game-mode/{id}/undo`, `POST /game-mode/{id}/save`, `DELETE /game-mode/{id}` |
+| Exports | `GET /export/batting-csv`, `/export/pitching-csv`, `/export/player-pdf/{id}` |
+| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me`, `GET /auth/config` |
+
+Send `Authorization: Bearer <token>` for protected endpoints.
+
+---
+
+## Testing
 
 ```bash
-# From project root
-pytest backend/tests/ -v
+# Backend (from the project root). Uses an in-memory database, never your real one.
+pytest
+ruff check backend && ruff format --check backend
+
+# Frontend
+cd frontend
+npm test
+npm run lint
+npm run typecheck
+npm run build
 ```
 
-Tests cover: batting average, OBP, SLG, OPS, ERA, WHIP, division-by-zero, insights, team stats, empty DataFrames, and all API routes.
+GitHub Actions (`.github/workflows/ci.yml`) runs all of the above, plus a production dependency audit and a Docker build, on every push to `main` and every pull request.
 
----
+## Project structure
 
-## API Endpoints
+```
+backend/
+  main.py              FastAPI app, CORS, startup (create tables, seed)
+  config.py            settings from environment variables
+  database.py          SQLAlchemy engine and session
+  schemas.py           request/response models and validation rules
+  models/              GameRecord, User, GameSession
+  routes/              stats, players, teams, records, export, game_mode, mlb_import, auth, meta
+  services/
+    analytics.py       every stat calculation (vectorized pandas)
+    records.py         loading, CSV parsing, player ids, safe inserts
+    game_engine.py     Game Mode scoring rules (event replay)
+    mlb_import.py      MLB Stats API client and box-score parser
+    innings.py         innings notation <-> outs
+    auth_service.py    hashing, tokens, permission checks
+  tests/               pytest suite
+frontend/
+  pages/               one file per screen
+  components/          tables, charts, forms, layout
+  context/             auth, theme, toasts, shared data and date range
+  hooks/useAsync.ts    data loading that ignores stale responses
+  utils/               API client and number formatting
+  __tests__/           Jest suite
+data/sample_data.csv
+docs/screenshots/
+```
 
-### Health
-| Method | Endpoint  | Description        |
-|--------|-----------|--------------------|
-| GET    | /health   | API health check   |
+## Deployment notes
 
-### Players
-| Method | Endpoint                        | Description                            |
-|--------|---------------------------------|----------------------------------------|
-| GET    | /players                        | All players with batting stats         |
-| GET    | /players/compare                | Compare 2-3 players (`?players=Name1&players=Name2`) |
-| GET    | /players/{player_name}          | Single player detail                   |
-| GET    | /players/{player_name}/trend    | Performance trend (`?stat=...`)        |
-
-### Teams
-| Method | Endpoint                       | Description                    |
-|--------|--------------------------------|--------------------------------|
-| GET    | /teams                         | All teams with aggregated stats |
-| GET    | /teams/{team_name}             | Team detail with roster        |
-| GET    | /teams/{team_name}/games       | Game-by-game results           |
-
-### Stats
-| Method | Endpoint            | Description                                                          |
-|--------|---------------------|----------------------------------------------------------------------|
-| GET    | /stats/batting      | Batting leaderboard (`?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`)  |
-| GET    | /stats/pitching     | Pitching leaderboard (optional date params)                          |
-| GET    | /stats/insights     | Auto-generated insight strings                                       |
-| GET    | /stats/dashboard    | Full dashboard data (optional date params)                           |
-
-### Upload & Data Entry
-| Method | Endpoint          | Description                                 |
-|--------|-------------------|---------------------------------------------|
-| POST   | /upload-csv       | Upload CSV file to replace data             |
-| POST   | /add-game-record  | Manually add a single game record (JSON)    |
-
-### Export
-| Method | Endpoint                          | Description                       |
-|--------|-----------------------------------|-----------------------------------|
-| GET    | /export/batting-csv               | Download batting leaderboard CSV  |
-| GET    | /export/pitching-csv              | Download pitching leaderboard CSV |
-| GET    | /export/player-pdf/{player_name}  | Download player card PDF          |
-
-### Game Mode
-| Method | Endpoint                          | Description                       |
-|--------|-----------------------------------|-----------------------------------|
-| POST   | /game-mode/start                  | Start a new game session          |
-| POST   | /game-mode/at-bat                 | Log an at-bat event               |
-| POST   | /game-mode/pitch                  | Log a pitch event                 |
-| GET    | /game-mode/{game_id}/scoreboard   | Get current game scoreboard       |
-| POST   | /game-mode/{game_id}/save         | Save all records to database      |
-
-### Authentication
-| Method | Endpoint        | Description                               |
-|--------|-----------------|-------------------------------------------|
-| POST   | /auth/register  | Register new user → returns JWT token     |
-| POST   | /auth/login     | Login → returns JWT token                 |
-| GET    | /auth/me        | Get current user (requires Bearer token)  |
-
----
-
-## Analytics Formulas
-
-| Stat           | Formula                                                                 |
-|----------------|-------------------------------------------------------------------------|
-| Batting Average| Hits / At-Bats                                                          |
-| OBP            | (H + BB + HBP) / (AB + BB + HBP)                                       |
-| SLG            | (1B + 2×2B + 3×3B + 4×HR) / AB                                        |
-| OPS            | OBP + SLG                                                               |
-| ERA            | (Earned Runs × 9) / Innings Pitched                                     |
-| WHIP           | (BB + H Allowed) / Innings Pitched                                      |
-| K/9            | (Strikeouts × 9) / Innings Pitched                                      |
-| BB/9           | (Walks × 9) / Innings Pitched                                           |
-
----
-
-## Color Scheme
-
-- Primary: `#1e40af` (blue-800)
-- Sidebar: `#0f172a` (slate-900)
-- Charts: `#3b82f6`, `#10b981`, `#f59e0b`, `#ef4444`, `#8b5cf6`
-- Dark bg: `#0f172a`, Dark card: `#1e293b`
-
----
+- Set `SECRET_KEY`, `CORS_ORIGINS` (your frontend URL) and, ideally, a PostgreSQL `DATABASE_URL`.
+- Build the frontend with `NEXT_PUBLIC_API_URL` pointing at the public API URL.
+- After creating your admin account, set `ALLOW_REGISTRATION=false` unless you want open sign-ups.
+- Serve both over HTTPS. Tokens are kept in the browser's localStorage and sent as a bearer header.
 
 ## License
 
-See `LICENSE` file.
+See `LICENSE`.
