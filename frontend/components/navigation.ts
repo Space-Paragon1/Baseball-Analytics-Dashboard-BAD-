@@ -8,6 +8,7 @@ import {
   Table,
   Target,
   Upload,
+  UserCog,
   Users,
   UsersRound,
 } from "lucide-react";
@@ -20,7 +21,14 @@ export interface NavItem {
   title: string;
 }
 
-export const NAV_SECTIONS: { heading: string; items: NavItem[] }[] = [
+export interface NavSection {
+  heading: string;
+  items: NavItem[];
+  /** Only shown to admins. */
+  adminOnly?: boolean;
+}
+
+export const NAV_SECTIONS: NavSection[] = [
   {
     heading: "Analytics",
     items: [
@@ -41,9 +49,18 @@ export const NAV_SECTIONS: { heading: string; items: NavItem[] }[] = [
       { label: "MLB Import", href: "/import", icon: CloudDownload, title: "Import MLB Data" },
     ],
   },
+  {
+    heading: "Admin",
+    adminOnly: true,
+    items: [{ label: "Users", href: "/users", icon: UserCog, title: "Users" }],
+  },
 ];
 
-const EXTRA_TITLES: Record<string, string> = { "/login": "Sign In", "/register": "Create Account" };
+const EXTRA_TITLES: Record<string, string> = {
+  "/login": "Sign In",
+  "/register": "Create Account",
+  "/account": "Account",
+};
 
 export function pageTitle(pathname: string): string {
   for (const section of NAV_SECTIONS) {

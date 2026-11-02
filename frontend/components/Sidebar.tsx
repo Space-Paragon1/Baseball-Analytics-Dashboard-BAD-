@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { LogIn, LogOut, ShieldCheck, UserPlus, X } from "lucide-react";
+import { LogIn, LogOut, ShieldCheck, UserCircle, UserPlus, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { NAV_SECTIONS } from "./navigation";
 
@@ -51,7 +51,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
-        {NAV_SECTIONS.map((section) => (
+        {NAV_SECTIONS.filter((s) => !s.adminOnly || user?.is_admin).map((section) => (
           <div key={section.heading} className="space-y-1">
             <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider px-3 mb-2">{section.heading}</p>
             {section.items.map((item) => {
@@ -76,14 +76,20 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="space-y-1 border-t border-slate-700 pt-4">
           {user ? (
             <>
-              <div className="px-4 py-1 flex items-center gap-2 text-slate-400 text-xs">
-                <span className="truncate">{user.username}</span>
+              <Link
+                href="/account"
+                onClick={onClose}
+                className={`sidebar-link ${isActive("/account") ? "active" : ""}`}
+                aria-current={isActive("/account") ? "page" : undefined}
+              >
+                <UserCircle className="w-4 h-4 flex-shrink-0" />
+                <span className="text-sm font-medium truncate">{user.username}</span>
                 {user.is_admin && (
-                  <span className="inline-flex items-center gap-1 text-amber-400">
+                  <span className="ml-auto inline-flex items-center gap-1 text-amber-400 text-xs">
                     <ShieldCheck className="w-3.5 h-3.5" /> admin
                   </span>
                 )}
-              </div>
+              </Link>
               <button onClick={handleLogout} className="sidebar-link w-full text-left">
                 <LogOut className="w-4 h-4 flex-shrink-0" />
                 <span className="text-sm font-medium">Sign out</span>
@@ -105,7 +111,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       </nav>
 
       <div className="px-5 py-3 border-t border-slate-700">
-        <p className="text-slate-500 text-xs">BAD v3.0</p>
+        <p className="text-slate-500 text-xs">BAD v3.1</p>
       </div>
     </aside>
   );

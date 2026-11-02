@@ -31,7 +31,16 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
-DATABASE_URL = _env("DATABASE_URL", f"sqlite:///{ROOT_DIR / 'baseball.db'}")
+def normalize_database_url(url: str) -> str:
+    """Point plain PostgreSQL URLs (including the postgres:// form some hosts hand
+    out) at the psycopg 3 driver, which is the one in requirements.txt."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url.removeprefix(prefix)
+    return url
+
+
+DATABASE_URL = normalize_database_url(_env("DATABASE_URL", f"sqlite:///{ROOT_DIR / 'baseball.db'}"))
 
 SECRET_KEY = _env("SECRET_KEY")
 if not SECRET_KEY:
@@ -55,3 +64,8 @@ SEED_SAMPLE_DATA = _env_bool("SEED_SAMPLE_DATA", True)
 
 # Largest CSV upload accepted, in megabytes.
 MAX_UPLOAD_MB = int(_env("MAX_UPLOAD_MB", "10"))
+
+# Failed sign-ins allowed per account (from one IP address) before a lockout.
+# One IP address gets 4x this many across all accounts.
+LOGIN_MAX_ATTEMPTS = int(_env("LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_MINUTES = int(_env("LOGIN_LOCKOUT_MINUTES", "15"))

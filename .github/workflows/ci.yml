@@ -24,6 +24,34 @@ jobs:
       - run: ruff format --check backend
       - run: pytest
 
+  backend-postgres:
+    name: Backend tests on PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bad_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bad_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r backend/requirements-dev.txt
+      - run: pytest
+
   frontend:
     name: Frontend (lint, types, tests, build)
     runs-on: ubuntu-latest
@@ -47,7 +75,7 @@ jobs:
   docker:
     name: Docker images build
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
+    needs: [backend, backend-postgres, frontend]
     steps:
       - uses: actions/checkout@v7
       - run: docker compose build

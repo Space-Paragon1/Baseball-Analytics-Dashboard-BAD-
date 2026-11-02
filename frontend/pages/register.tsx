@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { useAsync } from "../hooks/useAsync";
 import { fetchAuthConfig, getErrorMessage } from "../utils/api";
+import { passwordProblem } from "../utils/passwords";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -22,12 +23,9 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (password !== confirm) {
-      setError("Passwords don't match.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const problem = passwordProblem(password, confirm);
+    if (problem) {
+      setError(problem);
       return;
     }
     setLoading(true);
@@ -46,7 +44,7 @@ export default function RegisterPage() {
   if (config.data && !config.data.registration_open) {
     return (
       <AuthCard icon={<UserPlus className="w-5 h-5" />} title="Create account">
-        <p className="text-sm muted">Sign-ups are closed on this dashboard. Ask the admin for an account.</p>
+        <p className="text-sm muted">Sign-ups are closed on this dashboard. Ask an admin to create an account for you.</p>
         <Link href="/login" className="btn-primary mt-5 w-full">
           Sign in instead
         </Link>
