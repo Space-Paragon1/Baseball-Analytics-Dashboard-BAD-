@@ -4,7 +4,9 @@ from datetime import date
 
 import pytest
 
+from backend.models import GameRecord
 from backend.services import mlb_import
+from backend.services.records import seed_mlb_games
 
 
 def player(pid, name, pos, batting=None, pitching=None):
@@ -172,3 +174,24 @@ def test_import_reports_api_outage(client, admin_headers, monkeypatch):
     monkeypatch.setattr(mlb_import, "get_json", down)
     r = client.post("/import/mlb", json={"start_date": "2025-06-01", "end_date": "2025-06-02"}, headers=admin_headers)
     assert r.status_code == 502
+
+
+def test_seed_mlb_games_fills_empty_database(db, fake_api):
+    assert seed_mlb_games(db, date(2025, 6, 1), date(2025, 6, 30)) == 10
+    assert {r.game_id for r in db.query(GameRecord)} == {"MLB-1001", "MLB-1004"}
+
+
+def test_seed_mlb_games_keeps_existing_data(seeded, fake_api):
+    before = seeded.query(GameRecord).count()
+    assert seed_mlb_games(seeded, date(2025, 6, 1), date(2025, 6, 30)) == 0
+    assert seeded.query(GameRecord).count() == before
+    assert fake_api == []  # didn't call MLB at all
+
+
+def test_seed_mlb_games_survives_an_outage(db, monkeypatch):
+    def down(path, params=None):
+        raise mlb_import.MLBUnavailable("Couldn't reach the MLB Stats API")
+
+    monkeypatch.setattr(mlb_import, "get_json", down)
+    assert seed_mlb_games(db, date(2025, 6, 1), date(2025, 6, 30)) == 0
+    assert db.query(GameRecord).count() == 0

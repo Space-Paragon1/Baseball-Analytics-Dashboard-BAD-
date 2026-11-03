@@ -2,6 +2,8 @@
 
 A full-stack baseball stats app. Load box scores from a CSV, real MLB games, or a game you score live, and get leaderboards with advanced stats, standings, player trends, comparisons and exports.
 
+**Live demo: https://baseball-analytics-dashboard.onrender.com**, loaded with the last two weeks of the 2026 MLB regular season and the whole postseason. It runs on Render's free plan: if nobody has used it for a while, the first visit takes about a minute while the API wakes up. Each time it wakes it starts fresh, so feel free to create an account and try Game Mode or edit records. The first account after a restart becomes the admin.
+
 ![Dashboard](docs/screenshots/dashboard.png)
 
 | Batting leaders | Game Mode | Teams (dark mode) |
@@ -107,12 +109,14 @@ Backend settings come from environment variables (or `backend/.env`):
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated frontend origins allowed to call the API. |
 | `ALLOW_REGISTRATION` | `true` | Set to `false` to close public sign-ups once the admin exists. Admins can still add users. |
 | `SEED_SAMPLE_DATA` | `true` | Load the sample CSV when the database is empty. |
+| `SEED_MLB_START`, `SEED_MLB_END` | (off) | Dates (`YYYY-MM-DD`). When the database is empty, load real MLB games from this range at startup instead of the sample CSV (up to 250 games; the sample CSV is the fallback if MLB can't be reached). The live demo uses this. |
+| `SEED_MLB_TEAM_ID` | (all teams) | Limit `SEED_MLB_*` to one team. Team ids: `GET /import/mlb/teams`. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `720` | How long a sign-in lasts. |
 | `MAX_UPLOAD_MB` | `10` | Largest CSV accepted. |
 | `LOGIN_MAX_ATTEMPTS` | `5` | Wrong passwords allowed per account, from one IP address, before a lockout. One IP gets 4× this across all accounts. |
 | `LOGIN_LOCKOUT_MINUTES` | `15` | How long the lockout lasts. |
 
-Frontend: `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) is baked in at build time. In Docker, set `PUBLIC_API_URL` in `.env`.
+Frontend: `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`) is baked in at build time. In Docker, set `PUBLIC_API_URL` in `.env`. `STATIC_EXPORT=true` builds plain HTML files into `frontend/out/` for a static host, instead of the Node server the Docker image uses.
 
 ### Database migrations
 
@@ -247,6 +251,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs all of the above, including the
 
 ```
 alembic.ini            migration settings (run `alembic` from the project root)
+render.yaml            Render Blueprint for the live demo
 backend/
   main.py              FastAPI app, CORS, startup (migrate, seed)
   config.py            settings from environment variables
@@ -278,7 +283,20 @@ data/sample_data.csv
 docs/screenshots/
 ```
 
-## Deployment notes
+## Deploying
+
+### Render (free)
+
+`render.yaml` deploys the live demo setup: the API as a free web service and the frontend as a free static site.
+
+1. Fork this repo (or use your own copy), then in the [Render dashboard](https://dashboard.render.com) choose **New → Blueprint** and pick the repo. Render reads `render.yaml` and creates both services.
+2. When it finishes, open `https://baseball-analytics-dashboard.onrender.com`. If that name was taken, Render adds a suffix to the address. In that case, update `CORS_ORIGINS` and `NEXT_PUBLIC_API_URL` in `render.yaml` (or in each service's Environment tab) to the addresses Render gave you, and redeploy.
+
+Pushes to `main` redeploy whichever service changed.
+
+On the free plan the API's database lives on a temporary disk. Every time the API starts, which includes waking up after 15 idle minutes, it loads the MLB games again, and accounts and edits are cleared. That suits a demo. To keep data, point `DATABASE_URL` at a PostgreSQL database (Render's free one is deleted after 30 days; a paid plan or another provider keeps it), remove `SEED_MLB_*`, and set `ALLOW_REGISTRATION=false` once you've created your admin account.
+
+### Anywhere else
 
 - Set `SECRET_KEY`, `CORS_ORIGINS` (your frontend URL) and, ideally, a PostgreSQL `DATABASE_URL`.
 - Build the frontend with `NEXT_PUBLIC_API_URL` pointing at the public API URL.
