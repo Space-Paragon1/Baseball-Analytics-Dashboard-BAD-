@@ -111,7 +111,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       </nav>
 
       <div className="px-5 py-3 border-t border-slate-700">
-        <p className="text-slate-500 text-xs">BAD v3.1</p>
+        <p className="text-slate-500 text-xs">BAD v3.2</p>
       </div>
     </aside>
   );

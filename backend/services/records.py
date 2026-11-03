@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from backend.config import SAMPLE_DATA_PATH, logger
 from backend.models import GameRecord
 from backend.schemas import IDENTITY_FIELDS, STAT_FIELDS, GameRecordIn
+from backend.services import mlb_import
 
 # Player ids at or above this are reserved for MLB player ids from the MLB import.
 LOCAL_ID_LIMIT = 100_000
@@ -222,4 +223,24 @@ def seed_sample_data(db: Session) -> int:
     items, _ = parse_csv(SAMPLE_DATA_PATH.read_bytes())
     inserted, _ = save_records(db, items, mode="replace")
     logger.info("Loaded %d sample records", inserted)
+    return inserted
+
+
+def seed_mlb_games(db: Session, start: date, end: date, team_id: Optional[int] = None) -> int:
+    """Load real MLB games from a date range if the table is empty. Returns rows loaded.
+
+    Best effort: if MLB can't be reached or sends bad data, log it and load nothing,
+    so startup carries on (and falls back to the sample data)."""
+    if db.scalar(select(func.count()).select_from(GameRecord)):
+        return 0
+    try:
+        rows, games = mlb_import.fetch_rows(start, end, team_id)
+        if not rows:
+            logger.warning("No completed MLB games from %s to %s", start, end)
+            return 0
+        inserted, _ = save_records(db, [GameRecordIn(**r) for r in rows], mode="replace")
+    except Exception:
+        logger.exception("Couldn't load MLB games from %s to %s", start, end)
+        return 0
+    logger.info("Loaded %d MLB games (%d records) from %s to %s", games, inserted, start, end)
     return inserted

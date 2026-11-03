@@ -4,17 +4,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.config import CORS_ORIGINS, SEED_SAMPLE_DATA, logger
+from backend.config import CORS_ORIGINS, SEED_MLB_END, SEED_MLB_START, SEED_MLB_TEAM_ID, SEED_SAMPLE_DATA, logger
 from backend.database import SessionLocal, engine
 from backend.migrate import DatabaseVersionError, migrate_database
 from backend.routes import auth, export, game_mode, meta, mlb_import, players, records, stats, teams, users
-from backend.services.records import seed_sample_data
+from backend.services.records import seed_mlb_games, seed_sample_data
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
 for noisy in ("httpx", "httpx2"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 
-API_VERSION = "3.1.0"
+API_VERSION = "3.2.0"
 
 
 def init_database() -> None:
@@ -23,9 +23,11 @@ def init_database() -> None:
     except DatabaseVersionError as exc:
         logger.error("Database not upgraded: %s", exc)
         raise
-    if SEED_SAMPLE_DATA:
-        with SessionLocal() as db:
-            seed_sample_data(db)
+    with SessionLocal() as db:
+        if SEED_MLB_START:
+            seed_mlb_games(db, SEED_MLB_START, SEED_MLB_END, SEED_MLB_TEAM_ID)
+        if SEED_SAMPLE_DATA:
+            seed_sample_data(db)  # does nothing if MLB games loaded
 
 
 @asynccontextmanager

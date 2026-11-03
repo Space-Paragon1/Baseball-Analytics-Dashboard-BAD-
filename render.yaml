@@ -1,0 +1,64 @@
+# Render Blueprint for the live demo, on Render's free plan.
+# Deploy: Render dashboard → New → Blueprint → pick this repo. See "Deploying" in the README.
+#
+# The API keeps its SQLite database on the instance's temporary disk. Every time it
+# starts (after a deploy, or waking up after 15 idle minutes) it reloads real MLB games,
+# and accounts and edits are cleared. Nothing expires and nothing needs looking after.
+services:
+  - type: web
+    name: baseball-analytics-dashboard-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.backend
+    dockerContext: .
+    healthCheckPath: /health
+    buildFilter:
+      paths: [backend/**, data/**, alembic.ini, Dockerfile.backend]
+    envVars:
+      - key: PORT # the port the Docker image listens on
+        value: "8000"
+      - key: SECRET_KEY
+        generateValue: true
+      # The frontend's address below. If Render gave it a different one, change it here.
+      - key: CORS_ORIGINS
+        value: https://baseball-analytics-dashboard.onrender.com
+      # The last two weeks of the 2026 regular season and the whole postseason (239 games).
+      - key: SEED_MLB_START
+        value: "2026-09-13"
+      - key: SEED_MLB_END
+        value: "2026-11-01"
+      # Render's proxy sits in front of the API. Without this, every visitor shares the
+      # proxy's IP address, and 20 wrong passwords in total lock everyone out of signing in.
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
+
+  - type: web
+    name: baseball-analytics-dashboard
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/out
+    buildFilter:
+      paths: [frontend/**]
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+    envVars:
+      - key: STATIC_EXPORT
+        value: "true"
+      # The API's address above, baked into the build. If Render gave it a different one,
+      # change it here and redeploy the frontend.
+      - key: NEXT_PUBLIC_API_URL
+        value: https://baseball-analytics-dashboard-api.onrender.com
+      - key: NODE_VERSION
+        value: "24"
+      - key: SKIP_INSTALL_DEPS # the build command installs them
+        value: "true"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"

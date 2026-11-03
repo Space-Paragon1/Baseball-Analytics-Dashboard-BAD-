@@ -3,6 +3,7 @@
 import logging
 import os
 import secrets
+from datetime import date
 from pathlib import Path
 
 try:
@@ -29,6 +30,11 @@ def _env_bool(name: str, default: bool) -> bool:
     if not value:
         return default
     return value.lower() in {"1", "true", "yes", "on"}
+
+
+def _env_date(name: str) -> date | None:
+    value = _env(name)
+    return date.fromisoformat(value) if value else None
 
 
 def normalize_database_url(url: str) -> str:
@@ -61,6 +67,13 @@ ALLOW_REGISTRATION = _env_bool("ALLOW_REGISTRATION", True)
 
 # Load data/sample_data.csv on startup when the database is empty.
 SEED_SAMPLE_DATA = _env_bool("SEED_SAMPLE_DATA", True)
+
+# For demos: on startup, fill an empty database with real MLB games from this date
+# range (YYYY-MM-DD, up to 250 games) instead of the sample CSV, which is still used if
+# the import fails. SEED_MLB_TEAM_ID limits it to one team (ids: GET /import/mlb/teams).
+SEED_MLB_START = _env_date("SEED_MLB_START")
+SEED_MLB_END = _env_date("SEED_MLB_END") or SEED_MLB_START
+SEED_MLB_TEAM_ID = int(_env("SEED_MLB_TEAM_ID", "0")) or None
 
 # Largest CSV upload accepted, in megabytes.
 MAX_UPLOAD_MB = int(_env("MAX_UPLOAD_MB", "10"))
